@@ -1,4 +1,5 @@
 import torch
+torch.manual_seed(17)
 
 def get_data_loaders():
     # load datasets
