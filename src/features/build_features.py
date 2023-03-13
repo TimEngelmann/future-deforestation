@@ -88,18 +88,20 @@ def build_features(start_year, nr_years_train, horizon):
     patches = torch.load('data/interim/patches.pt')
 
     # split the dataset into train, val and test sets (val set is only valid of no overlap)
-    train_patches, val_patches, train_labels, val_labels = train_test_split(patches[:,:,:,:nr_years_train], patches[:,:,:,nr_years_train:nr_years_train+horizon], test_size=0.2, random_state=42)
-    test_patches = patches[:,:,:,horizon:nr_years_train+horizon]
+    train_features, val_features, train_labels, val_labels = train_test_split(patches[:,:,:,:nr_years_train], patches[:,:,:,nr_years_train:nr_years_train+horizon], test_size=0.2, random_state=42)
+    test_features = patches[:,:,:,horizon:nr_years_train+horizon]
     test_labels = patches[:,:,:,-horizon:]
 
-    # create the train, val and test datasets
-    train_dataset = torch.utils.data.TensorDataset(train_patches, train_labels)
-    val_dataset = torch.utils.data.TensorDataset(val_patches, val_labels)
-    test_dataset = torch.utils.data.TensorDataset(test_patches, test_labels)
+    # save features and labels
+    torch.save(train_features, 'data/processed/train_features.pt')
+    torch.save(train_labels, 'data/processed/train_labels.pt')
+    torch.save(val_features, 'data/processed/val_features.pt')
+    torch.save(val_labels, 'data/processed/val_labels.pt')
+    torch.save(test_features, 'data/processed/test_features.pt')
+    torch.save(test_labels, 'data/processed/test_labels.pt')
 
-    torch.save(train_dataset, 'data/processed/train_dataset.pt')
-    torch.save(val_dataset, 'data/processed/val_dataset.pt')
-    torch.save(test_dataset, 'data/processed/test_dataset.pt')
+    
+
 
 if __name__ == "__main__":
     start_year = 2006
