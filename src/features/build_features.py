@@ -30,12 +30,11 @@ def transform_to_labels(bio_data):
         bio_data_new[bio_data == key] = value
     return np.array(bio_data_new, dtype=np.int8)
 
-def process_data(start_year, nr_years_train, horizon):
+def process_data(start_year, nr_years_train, horizon, patch_size=400):
     # parameters to load date
     start_train = start_year # start of training data
     start_target = start_year + nr_years_train  # model has to predict this and following horizon
     start_test = start_target + horizon # model won't see anything after this year
-    patch_size = 400
     overlap = 0
 
     # load all the different years
@@ -79,11 +78,11 @@ def process_data(start_year, nr_years_train, horizon):
 
     torch.save(patches, 'data/interim/patches.pt')
 
-def build_features(start_year, nr_years_train, horizon):
+def build_features(start_year, nr_years_train, horizon, patch_size):
     
     # process data if has not been done yet
     if not os.path.exists('data/interim/patches.pt'):
-        process_data(start_year, nr_years_train, horizon)
+        process_data(start_year, nr_years_train, horizon, patch_size)
     
     patches = torch.load('data/interim/patches.pt')
 
@@ -107,4 +106,5 @@ if __name__ == "__main__":
     start_year = 2006
     nr_years_train = 10
     horizon = 3
-    build_features(start_year, nr_years_train, horizon)
+    patch_size = 512
+    build_features(start_year, nr_years_train, horizon, patch_size)
