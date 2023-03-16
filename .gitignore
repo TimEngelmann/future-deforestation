@@ -2,3 +2,5 @@
 /DeepForestcast
 .DS_Store
 */lightning_logs
+/lightning_logs
+*.pyc
