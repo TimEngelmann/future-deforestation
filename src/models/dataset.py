@@ -30,10 +30,12 @@ class DeforestationDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.dataset == "test":
-            labels = self.data[idx, 3+self.horizon:]
+            # labels = self.data[idx, 3+self.horizon:]
+            labels = self.data[idx, 3+self.horizon]
             years = np.arange(self.start_year + self.horizon, self.start_year + self.horizon + self.nr_years_train)
         else:
-            labels = self.data[idx, 3:3+self.horizon]
+            # labels = self.data[idx, 3:3+self.horizon]
+            labels = self.data[idx, 3]
             years = np.arange(self.start_year, self.start_year + self.nr_years_train)
 
         x_idx = self.data[idx, 0]

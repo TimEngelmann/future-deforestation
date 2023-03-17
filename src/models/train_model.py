@@ -1,17 +1,24 @@
 import numpy as np
 import torch
-from deforestation_dataset import DeforestationDataset
+import pytorch_lightning as pl
+import torchmetrics
+from dataset import DeforestationDataset
 
-def get_data_loaders():
-    # load datasets
-    train_dataset = DeforestationDataset("train", max_elements=1000)
-    val_dataset = DeforestationDataset("val", max_elements=1000)
-    test_dataset = DeforestationDataset("test", max_elements=1000)
+def get_data_loaders(batch_size=64, num_workers=5, max_elements=1000, train=True, val=True, test=True):
+    
+    train_loader = val_loader = test_loader = None
 
-    # create the train, val and test dataloaders
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=10)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=10)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=10)
+    if train:
+        train_dataset = DeforestationDataset("train", max_elements=max_elements)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+
+    if val:
+        val_dataset = DeforestationDataset("val", max_elements=max_elements)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    if test:
+        test_dataset = DeforestationDataset("test", max_elements=max_elements)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader, test_loader
 
@@ -22,7 +29,7 @@ def compile_model():
     stride=[(2, 2), (1, 1), (1, 1), (1, 1)]
     padding=[0, 0, 0, 0]
     dropout=0.2
-    output_dim=3
+    output_dim=1
 
     layers = []
 
@@ -55,9 +62,6 @@ def compile_model():
 
     return model
 
-import pytorch_lightning as pl
-import torchmetrics
-
 class ForestModel(pl.LightningModule):
 
     def __init__(self):
@@ -65,12 +69,16 @@ class ForestModel(pl.LightningModule):
         self.save_hyperparameters()
 
         self.model = compile_model()
-        self.loss_fn = torch.nn.CrossEntropyLoss() # weights disregarded
+        self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(2))
 
         self.auroc = torchmetrics.AUROC(task="binary")
         self.prec = torchmetrics.Precision(task="binary")
         self.recall = torchmetrics.Recall(task="binary")
         self.f1 = torchmetrics.F1Score(task="binary")
+
+        self.training_step_outputs = []
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
 
 
     def forward(self, features):
@@ -83,23 +91,35 @@ class ForestModel(pl.LightningModule):
         target = batch[1]
 
         logits = self.forward(features)
+        logits = logits.squeeze()
 
-        # logits_loss = logits.unsqueeze(1)
-        # target_loss = target.unsqueeze(1)
-        loss = self.loss_fn(logits[:,0], target[:,0])
+        loss = self.loss_fn(logits, target)
+
         probs = logits.sigmoid()
         preds = (probs > 0.5).float()
 
         metrics_batch = {}
+        metrics_batch["loss"] = loss
+        metrics_batch[f"auc"] = self.auroc(probs, target)
+        metrics_batch[f"precision"] = self.prec(preds, target)
+        metrics_batch[f"recall"] = self.recall(preds, target)
+        metrics_batch[f"f1"] = self.f1(preds, target)
+
+        '''
         for i in range(preds.shape[1]):
             metrics_batch[f"auc_{i}"] = self.auroc(probs[:,i], target[:,i])
             metrics_batch[f"precision_{i}"] = self.prec(preds[:,i], target[:,i])
             metrics_batch[f"recall_{i}"] = self.recall(preds[:,i], target[:,i])
             metrics_batch[f"f1_{i}"] = self.f1(preds[:,i], target[:,i])
-        
-        metrics_batch["loss"] = loss
+        '''
+        if stage == "train":
+            self.training_step_outputs.append(metrics_batch)
+        if stage == "valid":
+            self.validation_step_outputs.append(metrics_batch)
+        if stage == "test":
+            self.test_step_outputs.append(metrics_batch)
 
-        return metrics_batch
+        return loss
 
     def shared_epoch_end(self, outputs, stage):
 
@@ -112,26 +132,35 @@ class ForestModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         return self.shared_step(batch, "train")            
 
-    def training_epoch_end(self, outputs):
-        return self.shared_epoch_end(outputs, "train")
+    def on_train_epoch_end(self):
+        outputs = self.training_step_outputs
+        result = self.shared_epoch_end(outputs, "train")
+        self.training_step_outputs.clear() 
+        return result
 
     def validation_step(self, batch, batch_idx):
         return self.shared_step(batch, "valid")
 
-    def validation_epoch_end(self, outputs):
-        return self.shared_epoch_end(outputs, "valid")
+    def on_validation_epoch_end(self):
+        outputs = self.validation_step_outputs
+        result = self.shared_epoch_end(outputs, "valid")
+        self.validation_step_outputs.clear() 
+        return result
 
     def test_step(self, batch, batch_idx):
         return self.shared_step(batch, "test")  
 
-    def test_epoch_end(self, outputs):
-        return self.shared_epoch_end(outputs, "test")
+    def on_test_epoch_end(self):
+        outputs = self.test_step_outputs
+        result = self.shared_epoch_end(outputs, "test")
+        self.test_step_outputs.clear()
+        return result
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=0.0001)
 
 def train_model():
-    train_loader, val_loader, test_loader = get_data_loaders()
+    train_loader, val_loader, _ = get_data_loaders(max_elements=1000, test=False)
     model = ForestModel()
     trainer = pl.Trainer(
         accelerator='mps', 

@@ -82,8 +82,9 @@ def build_features(start_year, nr_years_train, horizon, resolution):
     # data format: [x_idx, y_idx, deforested, 2016, 2017, ..., 2021]
     data = torch.load('data/interim/data.pt')
 
-    data_changing = data[data[:,2] == 1]
-    data_non_changing = data[data[:,2] == 0]
+    stratify_on = 3 # 2=deforestation in horizon, 3=deforestation in next year
+    data_changing = data[data[:,stratify_on] == 1]
+    data_non_changing = data[data[:,stratify_on] == 0]
     indices = torch.randperm(data_non_changing.shape[0])
     indices = indices[:int(data_changing.shape[0]*4)]
 
@@ -92,7 +93,7 @@ def build_features(start_year, nr_years_train, horizon, resolution):
         data_non_changing[indices]
         ])
     
-    train_data, val_data = train_test_split(data_subsample, test_size=0.2, random_state=42, stratify=data_subsample[:,2])
+    train_data, val_data = train_test_split(data_subsample, test_size=0.2, random_state=42, stratify=data_subsample[:,stratify_on])
     
     torch.save(train_data, 'data/processed/train_data.pt')
     torch.save(val_data, 'data/processed/val_data.pt')
