@@ -160,7 +160,7 @@ class ForestModel(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=0.0001)
 
 def train_model():
-    train_loader, val_loader, _ = get_data_loaders(max_elements=1000, test=False)
+    train_loader, val_loader, _ = get_data_loaders(max_elements=10000, test=False)
     model = ForestModel()
     trainer = pl.Trainer(
         accelerator='mps', 
