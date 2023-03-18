@@ -32,7 +32,7 @@ def transform_to_labels(bio_data):
         bio_data_new[bio_data == key] = value
     return np.array(bio_data_new, dtype=np.uint8)
 
-def process_data(start_year, nr_years_train, horizon, resolution):
+def process_data(start_year, nr_years_train, horizon, resolution, max_patch_size):
     # parameters to load date
     start_train = start_year # start of training data
     start_target = start_year + nr_years_train  # model has to predict this and following horizon
@@ -71,13 +71,19 @@ def process_data(start_year, nr_years_train, horizon, resolution):
     data = np.array(data, dtype=dtype).T
     data = data[bio_data_dict[start_target - 1].flatten() == 0] # ensure forest cover in last input year
     data = data[np.max(data[:,3:],axis=1) <= 1] # filter out future non-observed points
+
+    # enforce minimum distance to border
+    r = int(max_patch_size/2)
+    data = data[(data[:,0] > r) & (data[:,1] > r)]
+    data = data[(data[:,0] < deforestation.shape[1] - r) & (data[:,1] < deforestation.shape[0] - r)]
+                
     torch.save(torch.from_numpy(data), 'data/interim/data.pt')
 
-def build_features(start_year, nr_years_train, horizon, resolution):
+def build_features(start_year, nr_years_train, horizon, resolution, max_patch_size):
     
     # process data if has not been done yet
     if not os.path.exists('data/interim/data.pt'):
-        process_data(start_year, nr_years_train, horizon, resolution)
+        process_data(start_year, nr_years_train, horizon, resolution, max_patch_size)
     
     # data format: [x_idx, y_idx, deforested, 2016, 2017, ..., 2021]
     data = torch.load('data/interim/data.pt')
@@ -104,4 +110,5 @@ if __name__ == "__main__":
     nr_years_train = 10
     horizon = 3
     resolution = 30
-    build_features(start_year, nr_years_train, horizon, resolution)
+    max_patch_size = 35
+    build_features(start_year, nr_years_train, horizon, resolution, max_patch_size)
