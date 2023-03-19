@@ -100,10 +100,11 @@ def build_features(start_year, nr_years_train, horizon, resolution, max_patch_si
         ])
     
     train_data, val_data = train_test_split(data_subsample, test_size=0.2, random_state=42, stratify=data_subsample[:,stratify_on])
+    test_data = data = data[data[:,-horizon-1] == 0] # ensure forest cover in last input year
     
     torch.save(train_data, 'data/processed/train_data.pt')
     torch.save(val_data, 'data/processed/val_data.pt')
-    torch.save(data_subsample, 'data/processed/test_data.pt')
+    torch.save(test_data, 'data/processed/test_data.pt')
     
 if __name__ == "__main__":
     start_year = 2006
