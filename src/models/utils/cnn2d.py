@@ -29,7 +29,7 @@ def compile_2D_CNN():
     layers.append(torch.nn.Dropout(dropout))
     layers.append(torch.nn.Flatten())
 
-    lin_in = 288 # maybe find way to calculate this
+    lin_in = 512 # maybe find way to calculate this
     layers.append(torch.nn.Linear(lin_in, 100))
     layers.append(torch.nn.ReLU())
     layers.append(torch.nn.BatchNorm1d(100))

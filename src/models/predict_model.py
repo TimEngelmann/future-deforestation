@@ -36,6 +36,6 @@ def predict_model(input_path, output_path):
     print(test_metrics)
 
 if __name__ == "__main__":
-    input_path = "lightning_logs/version_7/checkpoints/epoch=29-step=23460.ckpt"
-    output_path = "lightning_logs/version_7/"
+    input_path = "lightning_logs/version_16/checkpoints/epoch=29-step=23460.ckpt"
+    output_path = "lightning_logs/version_16/"
     predict_model(input_path, output_path)
