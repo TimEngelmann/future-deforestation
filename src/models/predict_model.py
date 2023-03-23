@@ -14,7 +14,7 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
 
 def predict_model(input_path, output_path):
 
-    val_loader, test_loader = get_data_loaders(max_elements=50000)
+    val_loader, test_loader = get_data_loaders(max_elements=None)
     
     model = ForestModel.load_from_checkpoint(input_path)
     trainer = pl.Trainer(
@@ -36,6 +36,6 @@ def predict_model(input_path, output_path):
     print(test_metrics)
 
 if __name__ == "__main__":
-    input_path = "lightning_logs/version_16/checkpoints/epoch=29-step=23460.ckpt"
-    output_path = "lightning_logs/version_16/"
+    input_path = "lightning_logs/version_8/checkpoints/epoch=0-step=291.ckpt"
+    output_path = "lightning_logs/version_8/"
     predict_model(input_path, output_path)
