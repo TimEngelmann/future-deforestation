@@ -40,3 +40,27 @@ def compile_2D_CNN():
     model = torch.nn.Sequential(*layers)
 
     return model
+
+def compile_simple_2D_CNN():
+    input_dim = 4
+    output_dim = 1
+
+    layers = []
+    layers.append(torch.nn.Conv2d(input_dim, 16, 5, 2, 0))
+    layers.append(torch.nn.ReLU())
+    layers.append(torch.nn.Conv2d(16, 32, 3, 1, 0))
+    layers.append(torch.nn.ReLU())
+    layers.append(torch.nn.Conv2d(32, 64, 3, 1, 0))
+    layers.append(torch.nn.ReLU())
+    layers.append(torch.nn.MaxPool2d(2, 2, 0))
+    layers.append(torch.nn.Dropout(0.25))
+    layers.append(torch.nn.Flatten())
+    lin_in = 602176
+    layers.append(torch.nn.Linear(lin_in, 128))
+    layers.append(torch.nn.ReLU())
+    layers.append(torch.nn.Dropout(0.5))
+    layers.append(torch.nn.Linear(128, output_dim))
+    layers.append(torch.nn.Sigmoid())
+
+    model = torch.nn.Sequential(*layers)
+    return model

@@ -1,7 +1,7 @@
 import torch
 import torchmetrics
 import pytorch_lightning as pl
-from .cnn2d import compile_2D_CNN
+from .cnn2d import compile_2D_CNN, compile_simple_2D_CNN
 
 class ForestModel(pl.LightningModule):
 
@@ -9,7 +9,7 @@ class ForestModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = compile_2D_CNN()
+        self.model = compile_simple_2D_CNN()
         self.loss_fn = torch.nn.MSELoss()
 
         self.training_step_outputs = []

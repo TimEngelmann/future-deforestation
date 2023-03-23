@@ -17,7 +17,7 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
 def train_model():
     pl.seed_everything(42, workers=True)
 
-    train_loader, val_loader = get_data_loaders(max_elements=500)
+    train_loader, val_loader = get_data_loaders(max_elements=None)
     model = ForestModel()
     trainer = pl.Trainer(
         accelerator='mps', 
@@ -25,7 +25,7 @@ def train_model():
         max_epochs=30,
         log_every_n_steps=5,
         deterministic=False,
-        
+
     )
 
     trainer.fit(
