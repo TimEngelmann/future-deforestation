@@ -3,5 +3,6 @@
 .DS_Store
 */lightning_logs
 /lightning_logs
+/old_lightning_logs
 *.pyc
 /reports

@@ -10,48 +10,29 @@ class ForestModel(pl.LightningModule):
         self.save_hyperparameters()
 
         self.model = compile_2D_CNN()
-        self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(2))
-
-        self.auroc = torchmetrics.AUROC(task="binary")
-        self.prec = torchmetrics.Precision(task="binary")
-        self.recall = torchmetrics.Recall(task="binary")
-        self.f1 = torchmetrics.F1Score(task="binary")
+        self.loss_fn = torch.nn.MSELoss()
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
 
     def forward(self, features):
-        logits = self.model(features)
-        return logits
+        output = self.model(features)
+        return output
     
     def shared_step(self, batch, stage):
 
         features = batch[0]
         target = batch[1]
         
-        logits = self.forward(features)
-        logits = logits.squeeze()
+        output = self.forward(features)
+        output = output.squeeze()
 
-        loss = self.loss_fn(logits, target)
-
-        probs = logits.sigmoid()
-        preds = (probs > 0.5).float()
+        loss = self.loss_fn(output, target)
 
         metrics_batch = {}
         metrics_batch["loss"] = loss
-        metrics_batch[f"auc"] = self.auroc(probs, target)
-        metrics_batch[f"precision"] = self.prec(preds, target)
-        metrics_batch[f"recall"] = self.recall(preds, target)
-        metrics_batch[f"f1"] = self.f1(preds, target)
-
-        '''
-        for i in range(preds.shape[1]):
-            metrics_batch[f"auc_{i}"] = self.auroc(probs[:,i], target[:,i])
-            metrics_batch[f"precision_{i}"] = self.prec(preds[:,i], target[:,i])
-            metrics_batch[f"recall_{i}"] = self.recall(preds[:,i], target[:,i])
-            metrics_batch[f"f1_{i}"] = self.f1(preds[:,i], target[:,i])
-        '''
+        
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)
         if stage == "valid":
@@ -98,10 +79,9 @@ class ForestModel(pl.LightningModule):
         return result
     
     def predict_step(self, batch, batch_idx):
-        logits = self.forward(batch[0])
-        logits = logits.squeeze()
-        probs = logits.sigmoid()
-        return probs
+        output = self.forward(batch[0])
+        output = output.squeeze()
+        return output
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=0.0001, weight_decay=0.1)
