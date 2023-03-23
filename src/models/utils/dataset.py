@@ -1,49 +1,94 @@
 import numpy as np
 import torch
+import os
+import rasterio
 from torch.utils.data import Dataset
 
-from torch.utils.data import Dataset
+# function to load biomass data
+def load_processed_biomass_data(year, shape=None, resolution=250):
+    path_bio = f"data/processed/biomass/amazonia/{resolution}m/" + f"biomass_{year}.tif"
+    with rasterio.open(path_bio) as src:
+        out_meta = src.meta
+        if shape is not None:
+            nodata = 255
+            bio_data, out_transform = rasterio.mask.mask(src, shape, crop=True, nodata=nodata)
+            bio_data = bio_data.squeeze()
+            out_meta.update({"driver": "GTiff",
+                 "height": bio_data.shape[0],
+                 "width": bio_data.shape[1],
+                 "transform": out_transform})
+        else:
+            bio_data = src.read(1)
+    bio_data = torch.from_numpy(bio_data)
+    return bio_data, out_meta
+
+# function to load transition data
+def load_processed_transition_data(year_start, year_end, shape=None, resolution=250):
+    path_bio = f"data/processed/biomass/amazonia/{resolution}m/" 
+    path_bio = path_bio + f"transition_{year_start}_{year_end}.tif"
+    with rasterio.open(path_bio) as src:
+        out_meta = src.meta
+        if shape is not None:
+            nodata = 255
+            transition_data, out_transform = rasterio.mask.mask(src, shape, crop=True, nodata=nodata)
+            transition_data = transition_data.squeeze().astype(bool)
+            out_meta.update({"driver": "GTiff",
+                 "height": transition_data.shape[0],
+                 "width": transition_data.shape[1],
+                 "transform": out_transform})
+        else:
+            transition_data = src.read(1).astype(bool)
+    transition_data = torch.from_numpy(transition_data)
+    return transition_data, out_meta
+
+
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, max_elements=None, start_year=2006, nr_years_train=10, horizon=1, resolution=30, patch_size=35):
+    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, max_elements=None):
         """
         Args:
             dataset: "train", "val", "test"
         """
         self.dataset = dataset
-        self.start_year = start_year
-        self.nr_years_train = nr_years_train
-        self.horizon = horizon
+        self.year = 2015 if dataset == "test" else 2010
+        self.past_horizons = [1,5,10]
+        self.future_horizon = 5
         self.resolution = resolution
-        self.patch_size = patch_size
+        self.input_px = input_px
+        self.output_px = output_px
         
-        # dataformat: [x_idx, y_idx, 2020, 2021]
+        # dataformat: [x_point, y_point, x_cluster, y_cluster]
         data = torch.load(f'data/processed/{dataset}_data.pt')
-        self.data = data[:max_elements] if max_elements is not None else data
+        self.data = data
+        if max_elements is not None:
+            if len(data) >= max_elements:
+                self.data = data[:max_elements]
 
-        self.bio_data = {}
-        path_bio_processed = f"data/processed/biomass/{resolution}m/"
-        for year in np.arange(self.start_year, self.start_year + self.nr_years_train + 2 * horizon):
-            self.bio_data[year] = torch.load(path_bio_processed + f"biomass_{year}.pt")
+        feature_data = []
+        bio_data, _ = load_processed_biomass_data(self.year, resolution=self.resolution)
+        feature_data.append(bio_data)
+    
+        for past_horizon in self.past_horizons:
+            transition_data, _ = load_processed_transition_data(self.year - past_horizon, self.year, resolution=self.resolution)
+            feature_data.append(transition_data)
+        self.feature_data = torch.stack(feature_data)
+
+        target_data, _ = load_processed_transition_data(self.year, self.year+self.future_horizon, resolution=self.resolution)
+        self.target_data = target_data
         
     def __len__(self):
         return self.data.shape[0]
 
     def __getitem__(self, idx):
-        if self.dataset == "test":
-            labels = self.data[idx, 2+self.horizon]
-            years = np.arange(self.start_year + self.horizon, self.start_year + self.horizon + self.nr_years_train)
-        else:
-            labels = self.data[idx, 2]
-            years = np.arange(self.start_year, self.start_year + self.nr_years_train)
+        x = self.data[idx, 0]
+        y = self.data[idx, 1]
+        i = int(self.input_px/2)
+        o = int(self.output_px/2)
 
-        x_idx = self.data[idx, 0]
-        y_idx = self.data[idx, 1]
-        r = int(self.patch_size/2)
+        features = self.feature_data[:, y-i:y+i, x-i:x+i]
+        target = torch.sum(self.target_data[y-o:y+o, x-o:x+o])/(self.output_px**2)
 
-        features = []
-        for year in years:
-            window = self.bio_data[year][y_idx-r:y_idx+r+1, x_idx-r:x_idx+r+1]
-            features.append(window)
-        features = torch.stack(features)
-
-        return features.float(), labels.float()
+        return features.float(), target.float()
+    
+if __name__ == "__main__":
+    train_dataset = DeforestationDataset("train")
+    features, target = train_dataset[0]
