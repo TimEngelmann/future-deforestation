@@ -1,7 +1,7 @@
 import torch
 import torchmetrics
 import pytorch_lightning as pl
-from .cnn2d import compile_2D_CNN, compile_simple_2D_CNN
+from .cnn2d import compile_2D_CNN, compile_simple_2D_CNN, compile_original_2D_CNN, spp_layer
 
 class ForestModel(pl.LightningModule):
 
@@ -9,7 +9,8 @@ class ForestModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = compile_simple_2D_CNN()
+        # self.model = compile_2D_CNN()
+        self.conv, self.lin = compile_original_2D_CNN()
         self.loss_fn = torch.nn.MSELoss()
 
         self.training_step_outputs = []
@@ -17,7 +18,18 @@ class ForestModel(pl.LightningModule):
         self.test_step_outputs = []
 
     def forward(self, features):
-        output = self.model(features)
+        # output = self.model(features)
+
+        output = self.conv(features)
+        output = spp_layer(output)
+        output = self.lin(output)
+        output = output.flatten()
+
+        if len(output.shape) == 2:
+            output = output.squeeze()
+        if len(output.shape) == 0:
+            output = output.unsqueeze(dim=0)
+
         return output
     
     def shared_step(self, batch, stage):
@@ -26,7 +38,6 @@ class ForestModel(pl.LightningModule):
         target = batch[1]
         
         output = self.forward(features)
-        output = output.squeeze()
 
         loss = self.loss_fn(output, target)
 
@@ -80,8 +91,7 @@ class ForestModel(pl.LightningModule):
     
     def predict_step(self, batch, batch_idx):
         output = self.forward(batch[0])
-        output = output.squeeze()
         return output
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.0001, weight_decay=0.1)
+        return torch.optim.Adam(self.parameters(), lr=0.0001, weight_decay=0.0)

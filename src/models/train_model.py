@@ -14,11 +14,14 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
     return train_loader, val_loader
 
 
-def train_model():
+def train_model(input_path=None):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(max_elements=None)
     model = ForestModel()
+    if input_path is not None:
+        model = ForestModel.load_from_checkpoint(input_path)
+
     trainer = pl.Trainer(
         accelerator='mps', 
         devices=1,
@@ -35,5 +38,6 @@ def train_model():
     )
 
 if __name__ == "__main__":
+    # input_path = "lightning_logs/version_10/checkpoints/epoch=16-step=1615.ckpt"
     train_model()
 
