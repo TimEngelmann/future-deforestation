@@ -9,8 +9,8 @@ class ForestModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        # self.model = compile_2D_CNN()
-        self.conv, self.lin = compile_original_2D_CNN()
+        self.model = compile_original_2D_CNN()
+        
         self.loss_fn = torch.nn.MSELoss()
 
         self.training_step_outputs = []
@@ -18,12 +18,7 @@ class ForestModel(pl.LightningModule):
         self.test_step_outputs = []
 
     def forward(self, features):
-        # output = self.model(features)
-
-        output = self.conv(features)
-        output = spp_layer(output)
-        output = self.lin(output)
-        output = output.flatten()
+        output = self.model(features)
 
         if len(output.shape) == 2:
             output = output.squeeze()
