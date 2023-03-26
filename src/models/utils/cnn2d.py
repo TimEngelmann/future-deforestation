@@ -28,7 +28,7 @@ def compile_original_2D_CNN():
     stride=[(2, 2), (1, 1), (1, 1), (1, 1)]
     padding=[0, 0, 0, 0]
     maxpool_dim = 10
-    dropout=0.3
+    dropout=0.0
     output_dim=1
     input_width=400
 
