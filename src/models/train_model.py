@@ -38,6 +38,6 @@ def train_model(input_path=None):
     )
 
 if __name__ == "__main__":
-    # input_path = "lightning_logs/version_10/checkpoints/epoch=16-step=1615.ckpt"
-    train_model()
+    input_path = "lightning_logs/version_29/checkpoints/epoch=29-step=2850.ckpt"
+    train_model(input_path)
 

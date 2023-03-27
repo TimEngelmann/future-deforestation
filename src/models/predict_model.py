@@ -40,5 +40,5 @@ def predict_model(path):
     print(test_metrics)
 
 if __name__ == "__main__":
-    path = "lightning_logs/version_29/"
+    path = "lightning_logs/version_30/"
     predict_model(path)
