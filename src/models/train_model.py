@@ -6,7 +6,9 @@ from utils.model import ForestModel
 
 def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
     train_dataset = DeforestationDataset("train", max_elements=max_elements)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+
+    sampler = torch.utils.data.WeightedRandomSampler(train_dataset.weights, len(train_dataset))
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=sampler, num_workers=num_workers)
 
     val_dataset = DeforestationDataset("val", max_elements=max_elements)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)

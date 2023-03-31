@@ -336,17 +336,17 @@ def report_test_data_statistics(test_filter_metrics, transition_2015_2020, bio_d
     plt.savefig('reports/figures/data_split/test_data_hist.png')
     plt.close()
 
-def build_features(preprocess=True, output_ha=10000, input_factor=10):
+def build_features(preprocess=True, output_px=40, input_px=400):
 
     if preprocess:
         resolution = 250
         dst_crs = 'EPSG:6933'
         preprocess_data(dst_crs, resolution)
 
-    px_resolution = 250 # calculate from area
-    output_ha = 10000
-    output_px = np.sqrt(output_ha*10000)/px_resolution
-    input_px= input_factor * output_px
+    # px_resolution = 250 # calculate from area
+    # output_ha = 10000
+    # output_px = np.sqrt(output_ha*10000)/px_resolution
+    # input_px= input_factor * output_px
     delta = input_px - output_px
 
     bio_data_2010, _ = load_biomass_data(2010, delta=delta)
@@ -372,6 +372,11 @@ def build_features(preprocess=True, output_ha=10000, input_factor=10):
 
     report_test_data_statistics(test_filter_metrics, transition_2015_2020, bio_data_2015, test_data_points, output_px)
 
+    bins = np.arange(0,np.percentile(train_data_points[:,-1],99),0.01)
+    for data_points in [train_data_points, val_data_points, test_data_points]:
+        targets_bin = np.digitize(data_points[:,-1], bins, right=True)
+        data_points[:,-1] = targets_bin
+
     dtype = np.int16 if np.max(bio_data_2010.shape) <= 32767 else np.int32
     torch.save(torch.from_numpy(train_data_points.astype(dtype)), 'data/processed/train_data.pt')
     torch.save(torch.from_numpy(val_data_points.astype(dtype)), 'data/processed/val_data.pt')
@@ -380,6 +385,6 @@ def build_features(preprocess=True, output_ha=10000, input_factor=10):
 
 if __name__ == "__main__":
     preprocess = False
-    output_ha=10000
-    input_factor=10
-    build_features(preprocess, output_ha, input_factor)
+    output_px = 40
+    input_px = 400
+    build_features(preprocess, output_px, input_px)
