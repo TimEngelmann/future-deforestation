@@ -27,7 +27,7 @@ def train_model(input_path=None):
     trainer = pl.Trainer(
         accelerator='mps', 
         devices=1,
-        max_epochs=30,
+        max_epochs=100,
         log_every_n_steps=5,
         deterministic=False,
 
