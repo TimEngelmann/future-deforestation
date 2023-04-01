@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 import torch
 import matplotlib as mpl
 from rasterio.warp import calculate_default_transform, reproject, Resampling
+import os
 
 def transform_crs(dst_crs, resolution):
 
@@ -47,11 +48,14 @@ def transform_crs(dst_crs, resolution):
                         resampling=Resampling.nearest)
                     
 # function to load biomass data
-def load_biomass_data(year, year_end=None, folder="processed", shape=None, resolution=250, delta=None):
+def load_biomass_data(year=None, year_end=None, folder="interim", shape=None, resolution=250, delta=None, name=None):
     
     # determine the path to load from from
     path_bio = f"data/{folder}/biomass/amazonia/{resolution}m/" 
-    path_bio = path_bio + f"biomass_{year}.tif" if year_end is None else path_bio + f"transition_{year}_{year_end}.tif"
+    if name is None:
+        path_bio = path_bio + f"biomass_{year}.tif" if year_end is None else path_bio + f"transition_{year}_{year_end}.tif"
+    else:
+        path_bio = path_bio + name + ".tif"
 
     nodata = 255 if year_end is None else False
 
@@ -106,23 +110,23 @@ def preprocess_data(dst_crs, resolution):
 
     # preprocess bio data
     for year in [2010,2015]:
-        bio_data, out_meta = load_biomass_data(year, folder="interim")
+        bio_data, out_meta = load_biomass_data(year)
         bio_data = transform_biodata_to_labels(bio_data)
-        with rasterio.open(f"data/processed/biomass/amazonia/{resolution}m/" + f"biomass_{year}.tif", "w", **out_meta) as dest:
+        with rasterio.open(f"data/interim/biomass/amazonia/{resolution}m/" + f"biomass_{year}.tif", "w", **out_meta) as dest:
             dest.write(np.expand_dims(bio_data, axis=0))
 
     # preprocess transition data
     for year_start, year_end in zip([2000,2005,2009,2010,2014,2015],[2010,2010,2010,2015,2015,2020]):
-        transition_data, out_meta = load_biomass_data(year_start, year_end, folder="interim")
+        transition_data, out_meta = load_biomass_data(year_start, year_end)
         transition_data = transform_transition_to_labels(transition_data)
-        with rasterio.open(f"data/processed/biomass/amazonia/{resolution}m/" + f"transition_{year_start}_{year_end}.tif", "w", **out_meta) as dest:
+        with rasterio.open(f"data/interim/biomass/amazonia/{resolution}m/" + f"transition_{year_start}_{year_end}.tif", "w", **out_meta) as dest:
             dest.write(np.expand_dims(transition_data, axis=0))
 
     # missing transition map
     transition_2010_2015, _ = load_biomass_data(2010, 2015)
     transition_2005_2010, out_meta = load_biomass_data(2010, 2015)
     transition_2005_2015 = (transition_2010_2015|transition_2005_2010)
-    with rasterio.open(f"data/processed/biomass/amazonia/{resolution}m/" + f"transition_{2005}_{2015}.tif", "w", **out_meta) as dest:
+    with rasterio.open(f"data/interim/biomass/amazonia/{resolution}m/" + f"transition_{2005}_{2015}.tif", "w", **out_meta) as dest:
             dest.write(np.expand_dims(transition_2005_2015, axis=0))  
 
 def compute_raster(bio_data_2010, transition_2005_2010, delta):
@@ -147,9 +151,8 @@ def compute_raster(bio_data_2010, transition_2005_2010, delta):
 
     xv, yv, transition_prior = zip(*bbox)
 
-    nr_bins = 6
-    bins = np.linspace(0,np.max(transition_prior),nr_bins)
-    transition_prior_bin = np.digitize(transition_prior, bins, right=True)
+    bins = np.arange(0,np.percentile(transition_prior,99),0.01)
+    transition_prior_bin = np.digitize(transition_prior, bins) - 1
 
     data_grid = np.vstack([xv, yv, transition_prior, transition_prior_bin]).T
     train_data, val_data = train_test_split(data_grid, test_size=0.1, random_state=42, stratify=data_grid[:,-1])
@@ -270,8 +273,9 @@ def report_data_statistics(train_filter_metrics, val_filter_metrics, dropped_fil
 
     all_points = np.vstack([train_data_points, val_data_points, dropped_data_points])
     targets = all_points[:,-1]
-    plt.hist(targets, alpha=0.5, bins=np.linspace(0,0.3,16), color='blue')
-    plt.vlines(targets.mean(), 0, 15000, color='blue', linestyles='--')
+    bins = np.arange(0,0.3,0.01)
+    plt.hist(targets, alpha=0.5, bins=bins, color='blue')
+    plt.vlines(targets.mean(), 0, 8000, color='blue', linestyles='--')
     plt.savefig('reports/figures/data_split/train_val_data_hist.png')
     plt.close()
 
@@ -331,22 +335,20 @@ def report_test_data_statistics(test_filter_metrics, transition_2015_2020, bio_d
 
     # plot hist
     targets = test_data_points[:,-1]
-    plt.hist(targets, alpha=0.5, bins=np.linspace(0,0.3,16), color='blue')
-    plt.vlines(targets.mean(), 0, 15000, color='blue', linestyles='--')
+    bins = np.arange(0,0.3,0.01)
+    plt.hist(targets, alpha=0.5, bins=bins, color='blue')
+    plt.vlines(targets.mean(), 0, 8000, color='blue', linestyles='--')
     plt.savefig('reports/figures/data_split/test_data_hist.png')
     plt.close()
 
-def build_features(preprocess=True, output_px=40, input_px=400):
+def build_features(output_px=40, input_px=400, resolution=250):
 
-    if preprocess:
-        resolution = 250
+    interim_path = f'data/interim/biomass/amazonia/{resolution}m/'
+    if not os.path.exists(interim_path):
+        os.makedirs(interim_path)
         dst_crs = 'EPSG:6933'
         preprocess_data(dst_crs, resolution)
 
-    # px_resolution = 250 # calculate from area
-    # output_ha = 10000
-    # output_px = np.sqrt(output_ha*10000)/px_resolution
-    # input_px= input_factor * output_px
     delta = input_px - output_px
 
     bio_data_2010, _ = load_biomass_data(2010, delta=delta)
@@ -372,10 +374,21 @@ def build_features(preprocess=True, output_px=40, input_px=400):
 
     report_test_data_statistics(test_filter_metrics, transition_2015_2020, bio_data_2015, test_data_points, output_px)
 
+    print("99 Percentile Train Data: ", np.percentile(train_data_points[:,-1],99))
     bins = np.arange(0,np.percentile(train_data_points[:,-1],99),0.01)
     for data_points in [train_data_points, val_data_points, test_data_points]:
-        targets_bin = np.digitize(data_points[:,-1], bins, right=True)
+        targets_bin = np.digitize(data_points[:,-1], bins) - 1
         data_points[:,-1] = targets_bin
+
+    # save data and biomass as pytorch files
+    processed_path = f'data/processed/biomass/amazonia/{resolution}m/'
+    if not os.path.exists(processed_path):
+        os.makedirs(processed_path)
+
+    bio_data_folder = [bio_data_name.split(".")[0] for bio_data_name in os.listdir(interim_path) if ".tif" in bio_data_name]
+    for bio_data_name in bio_data_folder:
+        bio_data, _ = load_biomass_data(name=bio_data_name, delta=delta)
+        torch.save(bio_data, f'data/processed/biomass/amazonia/{resolution}m/{bio_data_name}.pt')
 
     dtype = np.int16 if np.max(bio_data_2010.shape) <= 32767 else np.int32
     torch.save(torch.from_numpy(train_data_points.astype(dtype)), 'data/processed/train_data.pt')
@@ -384,7 +397,6 @@ def build_features(preprocess=True, output_px=40, input_px=400):
 
 
 if __name__ == "__main__":
-    preprocess = False
     output_px = 40
     input_px = 400
-    build_features(preprocess, output_px, input_px)
+    build_features(output_px, input_px)

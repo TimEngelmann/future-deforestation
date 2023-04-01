@@ -5,11 +5,11 @@ from .cnn2d import compile_2D_CNN, compile_simple_2D_CNN, compile_original_2D_CN
 
 class ForestModel(pl.LightningModule):
 
-    def __init__(self):
+    def __init__(self, input_width):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = compile_original_2D_CNN()
+        self.model = compile_original_2D_CNN(input_width=input_width)
         
         self.loss_fn = torch.nn.MSELoss()
 

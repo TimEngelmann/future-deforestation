@@ -21,7 +21,7 @@ def spp_layer(input_, levels=[6]):
     spp_pool = torch.cat(pyramid, 1)
     return spp_pool
 
-def compile_original_2D_CNN():
+def compile_original_2D_CNN(input_width=400):
     input_dim=4
     hidden_dim=[64, 128, 128]
     kernel_size=[(5, 5), (5, 5), (3, 3), (3, 3)]

@@ -6,35 +6,8 @@ import rasterio
 
 from torch.utils.data import Dataset
 
-# function to load biomass data
-def load_biomass_data(year, year_end=None, folder="processed", shape=None, resolution=250, delta=None):
-    
-    # determine the path to load from from
-    path_bio = f"data/{folder}/biomass/amazonia/{resolution}m/" 
-    path_bio = path_bio + f"biomass_{year}.tif" if year_end is None else path_bio + f"transition_{year}_{year_end}.tif"
-
-    nodata = 255 if year_end is None else False
-
-    with rasterio.open(path_bio) as src:
-        out_meta = src.meta
-        if shape is not None:
-            bio_data, out_transform = rasterio.mask.mask(src, shape, crop=True, nodata=nodata)
-            bio_data = bio_data.squeeze()
-            out_meta.update({"driver": "GTiff",
-                 "height": bio_data.shape[0],
-                 "width": bio_data.shape[1],
-                 "transform": out_transform})
-        else:
-            bio_data = src.read(1)
-    bio_data = torch.from_numpy(bio_data)
-    if delta is not None:
-        diff_x = int((bio_data.shape[1]%delta)/2 + delta)
-        diff_y = int((bio_data.shape[0]%delta)/2 + delta)
-        bio_data = torch.nn.functional.pad(bio_data, (diff_y, diff_y, diff_x, diff_x), value=nodata)
-    return bio_data, out_meta
-
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, delta=360, max_elements=None):
+    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, max_elements=None):
         """
         Args:
             dataset: "train", "val", "test"
@@ -46,9 +19,7 @@ class DeforestationDataset(Dataset):
         self.resolution = resolution
         self.input_px = input_px
         self.output_px = output_px
-        self.delta = delta
         
-        # dataformat: [x_point, y_point, x_cluster, y_cluster]
         data = torch.load(f'data/processed/{dataset}_data.pt')
         self.data = data
         if max_elements is not None:
@@ -56,15 +27,15 @@ class DeforestationDataset(Dataset):
                 self.data = data[:max_elements]
 
         feature_data = []
-        bio_data, _ = load_biomass_data(self.year, resolution=self.resolution, delta=self.delta)
+        bio_data = torch.load(f"data/processed/biomass/amazonia/{self.resolution}m/biomass_{self.year}.pt")
         feature_data.append(bio_data)
     
         for past_horizon in self.past_horizons:
-            transition_data, _ = load_biomass_data(self.year - past_horizon, self.year, resolution=self.resolution, delta=self.delta)
+            transition_data = torch.load(f"data/processed/biomass/amazonia/{resolution}m/transition_{self.year - past_horizon}_{self.year}.pt")
             feature_data.append(transition_data)
         self.feature_data = torch.stack(feature_data)
 
-        target_data, _ = load_biomass_data(self.year, self.year+self.future_horizon, resolution=self.resolution, delta=self.delta)
+        target_data = torch.load(f"data/processed/biomass/amazonia/{resolution}m/transition_{self.year}_{self.year+self.future_horizon}.pt")
         self.target_data = target_data
 
         targets_bin = self.data[:,-1]
