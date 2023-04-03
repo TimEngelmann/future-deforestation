@@ -3,6 +3,8 @@ import pytorch_lightning as pl
 from utils.dataset import DeforestationDataset
 from utils.model import ForestModel
 import os
+import json
+import sys
 
 def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=40, input_px=400):
     train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px)
@@ -16,12 +18,15 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=
     return train_loader, val_loader
 
 
-def train_model(init_nr=None, max_epochs=30, output_px=40, input_px=400, accelerator='mps'):
+def train_model(init_nr=None, 
+                max_epochs=30, lr=0.0001,
+                output_px=40, input_px=400, 
+                accelerator='mps'):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px)
-    model = ForestModel(input_px)
-    if init_nr is not None:
+    model = ForestModel(input_px, lr)
+    if init_nr >= 0:
         init_path = f"lightning_logs/version_{init_nr}/checkpoints/"
         checkpoints = [checkpoint for checkpoint in os.listdir(init_path) if ".ckpt" in checkpoint]
         if len(checkpoints) > 0:
@@ -42,8 +47,8 @@ def train_model(init_nr=None, max_epochs=30, output_px=40, input_px=400, acceler
     )
 
 if __name__ == "__main__":
-    init_nr = None
-    accelerator ='cuda'
-    max_epochs = 100
-    train_model(init_nr=init_nr, accelerator=accelerator, max_epochs=max_epochs)
+    config_file = sys.argv[1]
+    with open(f"configs/{config_file}.json", "r") as cfg:
+        hyp = json.load(cfg)
+    train_model(init_nr=hyp['init_nr'], accelerator=hyp['accelerator'], max_epochs=hyp['max_epochs'], lr=hyp['lr'])
 

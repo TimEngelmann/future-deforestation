@@ -5,5 +5,5 @@
 #SBATCH --gpus=1
 #SBATCH --time=24:00:00
 
-python3 src/models/train_model.py
+python3 src/models/train_model.py $1
  

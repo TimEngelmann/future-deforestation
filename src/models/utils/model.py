@@ -4,7 +4,7 @@ from .cnn2d import compile_original_2D_CNN
 
 class ForestModel(pl.LightningModule):
 
-    def __init__(self, input_width):
+    def __init__(self, input_width, lr):
         super().__init__()
         self.save_hyperparameters()
 
@@ -15,6 +15,8 @@ class ForestModel(pl.LightningModule):
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
+
+        self.lr = lr
 
     def forward(self, features):
         output = self.model(features)
@@ -88,4 +90,4 @@ class ForestModel(pl.LightningModule):
         return output
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.0001, weight_decay=0.0)
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=0.0)
