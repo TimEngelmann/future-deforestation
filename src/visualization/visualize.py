@@ -74,5 +74,5 @@ def visualize(model_nr):
     layer_plot(path, target_layer, prediction_layer)
 
 if __name__ == "__main__":
-    model_nr = 32
+    model_nr = 50
     visualize(model_nr)

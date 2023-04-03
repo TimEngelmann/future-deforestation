@@ -1,7 +1,6 @@
 import torch
-import torchmetrics
 import pytorch_lightning as pl
-from .cnn2d import compile_2D_CNN, compile_simple_2D_CNN, compile_original_2D_CNN, spp_layer
+from .cnn2d import compile_original_2D_CNN
 
 class ForestModel(pl.LightningModule):
 

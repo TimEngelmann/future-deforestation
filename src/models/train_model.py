@@ -1,8 +1,7 @@
-import numpy as np
 import torch
 import pytorch_lightning as pl
-from models.utils.dataset import DeforestationDataset
-from models.utils.model import ForestModel
+from utils.dataset import DeforestationDataset
+from utils.model import ForestModel
 import os
 
 def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=40, input_px=400):
@@ -17,7 +16,7 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=
     return train_loader, val_loader
 
 
-def train_model(init_nr=None, max_epochs=30, output_px=40, input_px=400):
+def train_model(init_nr=None, max_epochs=30, output_px=40, input_px=400, accelerator='mps'):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px)
@@ -29,7 +28,7 @@ def train_model(init_nr=None, max_epochs=30, output_px=40, input_px=400):
             model = ForestModel.load_from_checkpoint(init_path + checkpoints[-1])
 
     trainer = pl.Trainer(
-        accelerator='mps', 
+        accelerator=accelerator, 
         devices=1,
         max_epochs=max_epochs,
         log_every_n_steps=5,
@@ -43,6 +42,8 @@ def train_model(init_nr=None, max_epochs=30, output_px=40, input_px=400):
     )
 
 if __name__ == "__main__":
-    init_nr = 32
-    train_model(init_nr)
+    init_nr = None
+    accelerator ='cuda'
+    max_epochs = 100
+    train_model(init_nr=init_nr, accelerator=accelerator, max_epochs=max_epochs)
 

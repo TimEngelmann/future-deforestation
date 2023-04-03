@@ -1,8 +1,8 @@
 import os
 import torch
 import pytorch_lightning as pl
-from models.utils.dataset import DeforestationDataset
-from models.utils.model import ForestModel
+from utils.dataset import DeforestationDataset
+from utils.model import ForestModel
 
 def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
     val_dataset = DeforestationDataset("val", max_elements=max_elements)
@@ -41,5 +41,5 @@ def predict_model(model_nr):
     print(test_metrics)
 
 if __name__ == "__main__":
-    model_nr = 32
+    model_nr = 50
     predict_model(model_nr)
