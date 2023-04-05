@@ -6,13 +6,13 @@ import os
 import json
 import sys
 
-def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=40, input_px=400):
-    train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px)
+def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=40, input_px=400, root_path=""):
+    train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
 
     sampler = torch.utils.data.WeightedRandomSampler(train_dataset.weights, len(train_dataset))
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=sampler, num_workers=num_workers)
 
-    val_dataset = DeforestationDataset("val", max_elements=max_elements, output_px=output_px, input_px=input_px)
+    val_dataset = DeforestationDataset("val", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader
@@ -23,10 +23,11 @@ def train_model(init_nr=None,
                 loss_fn="BCEWithLogitsLoss",
                 architecture="VGG",
                 output_px=40, input_px=400, 
-                accelerator='mps'):
+                accelerator='mps',
+                root_path=""):
     pl.seed_everything(42, workers=True)
 
-    train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px)
+    train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px, root_path=root_path)
     
     model = ForestModel(input_px, lr, loss_fn, architecture)
     if init_nr >= 0:
@@ -50,8 +51,8 @@ def train_model(init_nr=None,
     )
 
 if __name__ == "__main__":
-    # config_file = sys.argv[1]
-    config_file = "config"
+    config_file = sys.argv[1]
+    # config_file = "config"
     with open(f"configs/{config_file}.json", "r") as cfg:
         hyp = json.load(cfg)
     train_model(init_nr=hyp['init_nr'], 
@@ -59,5 +60,6 @@ if __name__ == "__main__":
                 max_epochs=hyp['max_epochs'], 
                 lr=hyp['lr'], 
                 loss_fn=hyp['loss_fn'],
-                architecture=hyp['architecture'])
+                architecture=hyp['architecture'],
+                root_path=hyp['root_path'])
 

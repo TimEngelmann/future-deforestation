@@ -4,6 +4,7 @@
     "max_epochs": 100,
     "lr": 0.0005,
     "loss_fn": "BCEWithLogitsLoss",
-    "architecture": "original"
+    "architecture": "original",
+    "root_path": "/Users/timengelmann/Desktop/future-deforestation/"
 }
 

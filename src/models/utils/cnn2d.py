@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 def compile_original_2D_CNN(input_width=400):
-    input_dim=4
+    input_dim=10
     hidden_dim=[64, 128, 128]
     kernel_size=[(5, 5), (5, 5), (3, 3), (3, 3)]
     stride=[(2, 2), (1, 1), (1, 1), (1, 1)]
@@ -49,7 +49,7 @@ def compile_original_2D_CNN(input_width=400):
     return model
 
 def compile_VGG_CNN(input_width=400):
-    input_dim=4
+    input_dim=10
     hidden_dim=[64, 128, 256, 512, 512]
     kernel_size=[(3, 3), (3, 3), (3, 3), (3, 3), (3, 3), (3, 3)]
     stride=[(1, 1), (1, 1), (1, 1), (1, 1), (1, 1), (1, 1)]
