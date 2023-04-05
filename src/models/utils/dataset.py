@@ -9,7 +9,7 @@ class DeforestationDataset(Dataset):
             dataset: "train", "val", "test"
         """
         self.dataset = dataset
-        self.last_input = 9 if dataset == "test" else 14
+        self.last_input = 14 if dataset == "test" else 9
         self.train_horizon = 10
         self.future_horizon = 5
         self.resolution = resolution
@@ -23,7 +23,10 @@ class DeforestationDataset(Dataset):
                 self.data = data[:max_elements]
 
         deforestation_data = []
-        for year in torch.arange(2000,2020):
+        years = torch.arange(2000,2015)
+        if dataset == "test":
+            years = torch.arange(2000,2020)
+        for year in years:
             deforestation_data_year = torch.load(root_path + f"data/processed/biomass/amazonia/{self.resolution}m/deforestation/deforestation_{year}.pt")
             deforestation_data.append(deforestation_data_year)
         self.deforestation_data = torch.stack(deforestation_data)
