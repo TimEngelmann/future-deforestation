@@ -28,20 +28,20 @@ def predict_model(model_nr):
         logger=False
     )
 
-    # val_predictions =  trainer.predict(model, val_loader)
-    # val_predictions = torch.cat(val_predictions)
-    # torch.save(val_predictions, path + "val_predictions.pt")
+    val_predictions =  trainer.predict(model, val_loader)
+    val_predictions = torch.cat(val_predictions)
+    torch.save(val_predictions, path + "val_predictions.pt")
     valid_metrics = trainer.validate(model, dataloaders=val_loader, verbose=False)
     print("----- Validation Metrics -----")
     print(valid_metrics)
 
-    # test_predictions =  trainer.predict(model, test_loader)
-    # test_predictions = torch.cat(test_predictions)
-    # torch.save(test_predictions, path + "test_predictions.pt")
+    test_predictions =  trainer.predict(model, test_loader)
+    test_predictions = torch.cat(test_predictions)
+    torch.save(test_predictions, path + "test_predictions.pt")
     test_metrics = trainer.test(model, dataloaders=test_loader, verbose=False)
     print("----- Testing Metrics -----")
     print(test_metrics)
 
 if __name__ == "__main__":
-    model_nr = 4
+    model_nr = 5
     predict_model(model_nr)
