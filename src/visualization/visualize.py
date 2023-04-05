@@ -105,5 +105,5 @@ def visualize(model_nr, dataset="val"):
     layer_plot(path, target_layer, prediction_layer, dataset)
 
 if __name__ == "__main__":
-    model_nr = 3
+    model_nr = 4
     visualize(model_nr, "val")
