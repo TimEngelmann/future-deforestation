@@ -20,12 +20,15 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=
 
 def train_model(init_nr=None, 
                 max_epochs=30, lr=0.0001,
+                loss_fn="BCEWithLogitsLoss",
+                architecture="VGG",
                 output_px=40, input_px=400, 
                 accelerator='mps'):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px)
-    model = ForestModel(input_px, lr)
+    
+    model = ForestModel(input_px, lr, loss_fn, architecture)
     if init_nr >= 0:
         init_path = f"lightning_logs/version_{init_nr}/checkpoints/"
         checkpoints = [checkpoint for checkpoint in os.listdir(init_path) if ".ckpt" in checkpoint]
@@ -48,7 +51,13 @@ def train_model(init_nr=None,
 
 if __name__ == "__main__":
     config_file = sys.argv[1]
+    # config_file = "config"
     with open(f"configs/{config_file}.json", "r") as cfg:
         hyp = json.load(cfg)
-    train_model(init_nr=hyp['init_nr'], accelerator=hyp['accelerator'], max_epochs=hyp['max_epochs'], lr=hyp['lr'])
+    train_model(init_nr=hyp['init_nr'], 
+                accelerator=hyp['accelerator'], 
+                max_epochs=hyp['max_epochs'], 
+                lr=hyp['lr'], 
+                loss_fn=hyp['loss_fn'],
+                architecture=hyp['architecture'])
 

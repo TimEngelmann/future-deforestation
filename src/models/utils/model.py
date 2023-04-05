@@ -1,16 +1,22 @@
 import torch
 import pytorch_lightning as pl
-from .cnn2d import compile_original_2D_CNN
+from .cnn2d import compile_original_2D_CNN,compile_VGG_CNN
 
 class ForestModel(pl.LightningModule):
 
-    def __init__(self, input_width, lr):
+    def __init__(self, input_width, lr, loss_fn, architecture):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = compile_original_2D_CNN(input_width=input_width)
+        if architecture == "VGG":
+            self.model = compile_VGG_CNN(input_width=input_width)
+        else:
+            self.model = compile_original_2D_CNN(input_width=input_width)
         
-        self.loss_fn = torch.nn.MSELoss()
+        if loss_fn == "BCEWithLogitsLoss":
+            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+        else:
+            self.loss_fn = torch.nn.MSELoss()
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -34,7 +40,9 @@ class ForestModel(pl.LightningModule):
         target = batch[1]
         
         output = self.forward(features)
-
+        if self.loss_fn._get_name() != 'BCEWithLogitsLoss':
+            output = torch.sigmoid(output)
+        
         loss = self.loss_fn(output, target)
 
         metrics_batch = {}
@@ -87,6 +95,7 @@ class ForestModel(pl.LightningModule):
     
     def predict_step(self, batch, batch_idx):
         output = self.forward(batch[0])
+        output = torch.sigmoid(output)
         return output
 
     def configure_optimizers(self):
