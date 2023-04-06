@@ -63,22 +63,30 @@ def calculate_classification_metrics(predictions, targets, path, dataset):
     plt.savefig(path + f"{dataset}_classification_metrics.png")
     plt.close()
 
-def visualize(model_nr, dataset="val"):
+def visualize(model_nr, dataset="val", root_path=""):
     path = f"lightning_logs/version_{model_nr}/"
 
     # get targets
     output_px = 40
     o = int(output_px/2)
     data = torch.load(f'data/processed/{dataset}_data.pt')
-    if dataset == "test":
-        target_data = torch.load(f"data/processed/biomass/amazonia/250m/transition_2015_2020.pt")
-    else:
-        target_data = torch.load(f"data/processed/biomass/amazonia/250m/transition_2010_2015.pt")
+
+    deforestation_data = []
+    years = torch.arange(2000,2020)
+    for year in years:
+        deforestation_data_year = torch.load(root_path + f"data/processed/biomass/amazonia/{250}m/deforestation/deforestation_{year}.pt")
+        deforestation_data.append(deforestation_data_year)
+    deforestation_data = torch.stack(deforestation_data)
+
+    last_input = 14 if dataset == "test" else 9
+    future_horizon = 5
+
     targets = []
     for point in data:
         x = point[0]
         y = point[1]
-        target = torch.sum(target_data[y-o:y+o, x-o:x+o])/(output_px**2)
+        target_window = deforestation_data[last_input+1:last_input+future_horizon+1, y-o:y+o, x-o:x+o]
+        target = torch.count_nonzero(target_window == 4)/(output_px**2)
         targets.append(target)
     targets = torch.tensor(targets)
 
@@ -92,8 +100,8 @@ def visualize(model_nr, dataset="val"):
     # x_point, y_point, x_cluster, y_cluster, target | target | prediction
     data_frame = torch.column_stack([data, targets, predictions])
 
-    target_layer = np.ones(target_data.shape) * -1
-    prediction_layer = np.ones(target_data.shape) * -1
+    target_layer = np.ones(deforestation_data[0].shape) * -1
+    prediction_layer = np.ones(deforestation_data[0].shape) * -1
     for point in data_frame:
         x = int(point[0])
         y = int(point[1])
@@ -105,5 +113,5 @@ def visualize(model_nr, dataset="val"):
     layer_plot(path, target_layer, prediction_layer, dataset)
 
 if __name__ == "__main__":
-    model_nr = 5
+    model_nr = 6
     visualize(model_nr, "test")

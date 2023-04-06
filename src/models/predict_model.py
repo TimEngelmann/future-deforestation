@@ -43,5 +43,5 @@ def predict_model(model_nr):
     print(test_metrics)
 
 if __name__ == "__main__":
-    model_nr = 5
+    model_nr = 6
     predict_model(model_nr)
