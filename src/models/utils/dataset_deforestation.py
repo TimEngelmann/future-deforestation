@@ -3,36 +3,33 @@ import torchvision
 from torch.utils.data import Dataset
 
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, max_elements=None):
+    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, max_elements=None, root_path=""):
         """
         Args:
             dataset: "train", "val", "test"
         """
         self.dataset = dataset
-        self.year = 2015 if dataset == "test" else 2010
-        self.past_horizons = [1,5,10]
+        self.last_input = 14 if dataset == "test" else 9
+        self.train_horizon = 10
         self.future_horizon = 5
         self.resolution = resolution
         self.input_px = input_px
         self.output_px = output_px
         
-        data = torch.load(f'data/processed_transition/{dataset}_data.pt')
+        data = torch.load(root_path + f'data/processed_deforestation/{dataset}_data.pt')
         self.data = data
         if max_elements is not None:
             if len(data) >= max_elements:
                 self.data = data[:max_elements]
 
-        feature_data = []
-        bio_data = torch.load(f"data/processed_transition/biomass/amazonia/{self.resolution}m/biomass_{self.year}.pt")
-        feature_data.append(bio_data)
-    
-        for past_horizon in self.past_horizons:
-            transition_data = torch.load(f"data/processed_transition/biomass/amazonia/{resolution}m/transition_{self.year - past_horizon}_{self.year}.pt")
-            feature_data.append(transition_data)
-        self.feature_data = torch.stack(feature_data)
-
-        target_data = torch.load(f"data/processed_transition/biomass/amazonia/{resolution}m/transition_{self.year}_{self.year+self.future_horizon}.pt")
-        self.target_data = target_data
+        deforestation_data = []
+        years = torch.arange(2000,2015)
+        if dataset == "test":
+            years = torch.arange(2000,2020)
+        for year in years:
+            deforestation_data_year = torch.load(root_path + f"data/processed_deforestation/biomass/amazonia/{self.resolution}m/deforestation/deforestation_{year}.pt")
+            deforestation_data.append(deforestation_data_year)
+        self.deforestation_data = torch.stack(deforestation_data)
 
         targets_bin = self.data[:,-1]
         bin_count = torch.bincount(targets_bin)
@@ -43,8 +40,8 @@ class DeforestationDataset(Dataset):
         # helpers
         self.i = torch.tensor(int(input_px/2))
         self.o = torch.tensor(int(output_px/2))
-        self.width = target_data.shape[1]
-        self.height = target_data.shape[0]
+        self.width = self.deforestation_data.shape[2]
+        self.height = self.deforestation_data.shape[1]
         
     def __len__(self):
         return self.data.shape[0]
@@ -62,14 +59,15 @@ class DeforestationDataset(Dataset):
             y = torch.maximum(y,self.i)
             y = torch.minimum(y,self.height - self.i)
 
-        features = self.feature_data[:, y-self.i:y+self.i, x-self.i:x+self.i]
+        features = self.deforestation_data[self.last_input-self.train_horizon+1:self.last_input+1, y-self.i:y+self.i, x-self.i:x+self.i]
         
         if self.dataset == "train":
             angles = [0,90,180,270]
             angle_idx = torch.randint(0, len(angles),(1,)).item()
             features = torchvision.transforms.functional.rotate(features, angles[angle_idx])
 
-        target = torch.sum(self.target_data[y-self.o:y+self.o, x-self.o:x+self.o])/(self.output_px**2)
+        target_window = self.deforestation_data[self.last_input+1:self.last_input+self.future_horizon+1, y-self.o:y+self.o, x-self.o:x+self.o]
+        target = torch.count_nonzero(target_window == 4)/(self.output_px**2)
 
         return features.float(), target.float()
     
