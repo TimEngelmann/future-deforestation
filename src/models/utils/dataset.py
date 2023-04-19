@@ -1,9 +1,12 @@
 import torch
 import torchvision
 from torch.utils.data import Dataset
+import rasterio
+from rasterio.windows import Window
+import numpy as np
 
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, max_elements=None):
+    def __init__(self, dataset, resolution=30, input_px=35, output_px=1, delta=50, max_elements=None, root_path=""):
         """
         Args:
             dataset: "train", "val", "test"
@@ -11,67 +14,86 @@ class DeforestationDataset(Dataset):
         self.dataset = dataset
         self.year = 2015 if dataset == "test" else 2010
         self.past_horizons = [1,5,10]
-        self.future_horizon = 5
+        self.future_horizon = 1
         self.resolution = resolution
         self.input_px = input_px
-        self.output_px = output_px
+        self.root_path = root_path
+
+        self.data = torch.load(root_path + f"data/processed/{dataset}_data.pt")
         
-        data = torch.load(f'data/processed_transition/{dataset}_data.pt')
-        self.data = data
-        if max_elements is not None:
-            if len(data) >= max_elements:
-                self.data = data[:max_elements]
-
-        feature_data = []
-        bio_data = torch.load(f"data/processed_transition/biomass/amazonia/{self.resolution}m/biomass_{self.year}.pt")
-        feature_data.append(bio_data)
-    
-        for past_horizon in self.past_horizons:
-            transition_data = torch.load(f"data/processed_transition/biomass/amazonia/{resolution}m/transition_{self.year - past_horizon}_{self.year}.pt")
-            feature_data.append(transition_data)
-        self.feature_data = torch.stack(feature_data)
-
-        target_data = torch.load(f"data/processed_transition/biomass/amazonia/{resolution}m/transition_{self.year}_{self.year+self.future_horizon}.pt")
-        self.target_data = target_data
-
-        targets_bin = self.data[:,-1]
-        bin_count = torch.bincount(targets_bin)
-        bin_weights = 1 / (bin_count/torch.sum(bin_count))
-        sample_weights = [bin_weights[t] for t in targets_bin]
-        self.weights = torch.tensor(sample_weights)
-
         # helpers
+        self.augmentation = int((delta-input_px)/2)
         self.i = torch.tensor(int(input_px/2))
-        self.o = torch.tensor(int(output_px/2))
-        self.width = target_data.shape[1]
-        self.height = target_data.shape[0]
         
     def __len__(self):
         return self.data.shape[0]
+    
+    def get_target(self, x, y):
+        path = self.root_path + f"data/processed/{30}m/deforestation/" + f"deforestation_{self.year + self.future_horizon}.tif"
+        with rasterio.open(path) as src:
+            # Define the window
+            window = ((x, x+1), (y, y+1))
+            data = src.read(window=window, boundless=True, fill_value=0, masked=False)
+            data = data.squeeze().astype(np.uint8)
+        
+        if data == 4:
+            return 1
+        elif data == 2:
+            return 0
+        else:
+            return -1
+    
+    def get_feature(self, x, y, year, data_type="landuse"):
+        path = self.root_path + f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}.tif"
+        # Open the mosaic file
+        with rasterio.open(path) as src:
+            # Define the window
+            window = Window(x - int(self.input_px/2), y - int(self.input_px/2), self.input_px, self.input_px)
+            # Read the data from the window, ensure that it is filled with nodata
+            fill_value = 255 if data_type == "landuse" else 0
+            data = src.read(window=window, boundless=True, fill_value=fill_value)
+            data = data.squeeze().astype(np.uint8)
+        return torch.from_numpy(data)
+
+    def aggregate_features(self, x, y):
+        # load deforestation data of last ten years
+        deforestation_prior = []
+        for i in range(10):
+            deforestation_prior.append(self.get_feature(x, y, self.year - i, data_type="deforestation") == 4)
+        deforestation_prior = torch.stack(deforestation_prior)
+
+        features = []
+        # add deforestation of last year to features
+        features.append(deforestation_prior[0].type(torch.bool))
+        # add deforestation of last 5 years to features
+        features.append(torch.sum(deforestation_prior[:5], axis=0, dtype=bool))
+        # add deforestation of last 10 years to features
+        features.append(torch.sum(deforestation_prior, axis=0, dtype=bool))
+        # add landuse data of current year to features
+        features.append(self.get_feature(x, y, self.year, data_type="landuse"))
+        return torch.stack(features)
 
     def __getitem__(self, idx):
 
-        x = self.data[idx, 0]
-        y = self.data[idx, 1]
+        x = self.data[idx, 0].item()
+        y = self.data[idx, 1].item()
+        target = 1 if self.data[idx, 2] == 4 else 0
 
         if self.dataset == "train":
-            x = x + torch.randint(-self.o,self.o,(1,)).item()
-            y = y + torch.randint(-self.o,self.o,(1,)).item()
-            x = torch.maximum(x,self.i)
-            x = torch.minimum(x,self.width - self.i)
-            y = torch.maximum(y,self.i)
-            y = torch.minimum(y,self.height - self.i)
+            target = -1
+            while target == -1:
+                x = x + torch.randint(-self.augmentation,self.augmentation,(1,)).item()
+                y = y + torch.randint(-self.augmentation,self.augmentation,(1,)).item()
+                target = self.get_target(x, y)
 
-        features = self.feature_data[:, y-self.i:y+self.i, x-self.i:x+self.i]
+        features = self.aggregate_features(x, y)
         
         if self.dataset == "train":
             angles = [0,90,180,270]
             angle_idx = torch.randint(0, len(angles),(1,)).item()
             features = torchvision.transforms.functional.rotate(features, angles[angle_idx])
 
-        target = torch.sum(self.target_data[y-self.o:y+self.o, x-self.o:x+self.o])/(self.output_px**2)
-
-        return features.float(), target.float()
+        return features.float(), torch.tensor(target).float()
     
 if __name__ == "__main__":
     train_dataset = DeforestationDataset("train")

@@ -6,11 +6,10 @@ import os
 import json
 import sys
 
-def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=40, input_px=400, root_path=""):
+def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=1, input_px=35, root_path=""):
     train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
 
-    sampler = torch.utils.data.WeightedRandomSampler(train_dataset.weights, len(train_dataset))
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=sampler, num_workers=num_workers)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
     val_dataset = DeforestationDataset("val", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
@@ -22,7 +21,7 @@ def train_model(init_nr=None,
                 max_epochs=30, lr=0.0001,
                 loss_fn="BCEWithLogitsLoss",
                 architecture="VGG",
-                output_px=40, input_px=400, 
+                output_px=1, input_px=35, 
                 accelerator='mps',
                 root_path=""):
     pl.seed_everything(42, workers=True)
@@ -51,8 +50,8 @@ def train_model(init_nr=None,
     )
 
 if __name__ == "__main__":
-    config_file = sys.argv[1]
-    # config_file = "config"
+    # config_file = sys.argv[1]
+    config_file = "config"
     with open(f"configs/{config_file}.json", "r") as cfg:
         hyp = json.load(cfg)
     train_model(init_nr=hyp['init_nr'], 

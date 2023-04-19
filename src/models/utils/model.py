@@ -1,7 +1,7 @@
 import torch
 import pytorch_lightning as pl
 from .cnn2d import compile_original_2D_CNN,compile_VGG_CNN
-from torchmetrics import MeanSquaredError
+from torchmetrics import MeanSquaredError, F1Score
 
 class ForestModel(pl.LightningModule):
 
@@ -15,12 +15,13 @@ class ForestModel(pl.LightningModule):
             self.model = compile_original_2D_CNN(input_width=input_width)
         
         if loss_fn == "BCEWithLogitsLoss":
-            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+            self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(2.0))
         else:
             self.loss_fn = torch.nn.MSELoss()
 
         self.mse_metric = MeanSquaredError()
         self.rmse_metric = MeanSquaredError(squared=False)
+        self.f1_metric = F1Score(task="binary")
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -55,6 +56,7 @@ class ForestModel(pl.LightningModule):
         output = torch.sigmoid(output)
         metrics_batch["mse"] = self.mse_metric(output, target)
         metrics_batch["rmse"] = self.rmse_metric(output, target)
+        metrics_batch["f1"] = self.f1_metric(output, target)
 
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)
