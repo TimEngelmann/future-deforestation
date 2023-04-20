@@ -189,7 +189,7 @@ def aggregate_deforestation(dataset, past_horizons=[1,5,10]):
             suffix = "_test" if dataset == "test" else ""
             out_path = f"data/processed/{30}m/aggregated/"  + f"aggregated_{i}{suffix}.tif"
             out_meta = src.meta.copy()
-            out_meta.update({"dtype": "uint8", "nbits": 1, "compress": "DEFLATE"})
+            out_meta.update({"dtype": "uint8", "compress": "DEFLATE"}) # "nbits": 1
             with rasterio.open(out_path, "w", **out_meta) as dest:
                 dest.write(np.expand_dims(deforestation_aggregated.astype(np.uint8), axis=0))
             if i == past_horizons[-1]:

@@ -5,6 +5,17 @@ import rasterio
 from rasterio.windows import Window
 import numpy as np
 
+def load_entire(year, data_type="landuse", dataset="train"):
+    suffix = "_test" if dataset == "test" else ""
+    path = f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}{suffix}.tif"
+    # Open the mosaic file
+    with rasterio.open(path) as src:
+        fill_value = 255 if data_type == "landuse" else 0
+        data = src.read(fill_value=fill_value)
+        data = data.squeeze()
+        data = data.astype(bool) if data_type == "aggregated" else data.astype(np.uint8)
+    return torch.from_numpy(data)
+
 class DeforestationDataset(Dataset):
     def __init__(self, dataset, resolution=30, input_px=35, output_px=1, delta=50, max_elements=None, root_path=""):
         """
@@ -26,11 +37,21 @@ class DeforestationDataset(Dataset):
         # helpers
         self.augmentation = int((delta-input_px)/2)
         self.i = torch.tensor(int(input_px/2))
+
+        # load features
+        self.aggregated = []
+        for i in self.past_horizons:
+            self.aggregated.append(load_entire(i, data_type="aggregated"))
+        self.aggregated = torch.stack(self.aggregated)
+
+        self.deforestation_now = load_entire(self.year, data_type="deforestation")
+        self.deforestation_future = load_entire(self.year + self.future_horizon, data_type="deforestation")
         
     def __len__(self):
         return self.data.shape[0]
     
     def get_targets(self, x, y):
+        '''
         path = self.root_path + f"data/processed/{30}m/deforestation/" + f"deforestation_{self.year + self.future_horizon}.tif"
         with rasterio.open(path) as src:
             # Define the window
@@ -38,6 +59,8 @@ class DeforestationDataset(Dataset):
             data = src.read(window=window, boundless=True, fill_value=0, masked=False)
             data = data.squeeze().astype(np.uint8)
         return torch.from_numpy(data)
+        '''
+        return self.deforestation_future[y-self.augmentation:y+self.augmentation+1, x-self.augmentation:x+self.augmentation+1]
     
     def get_feature(self, x, y, year, data_type="landuse"):
         suffix = "_test" if self.dataset == "test" else ""
@@ -53,11 +76,17 @@ class DeforestationDataset(Dataset):
         return torch.from_numpy(data)
 
     def aggregate_features(self, x, y):
+        '''
         features = []
         for i in self.past_horizons:
             features.append(self.get_feature(x, y, i, data_type="aggregated"))
         features.append(self.get_feature(x, y, self.year, data_type="deforestation"))
         return torch.stack(features)
+        '''
+        features = []
+        features.append(self.aggregated[:, y-int(self.input_px/2):y+int(self.input_px/2)+1, x-int(self.input_px/2):x+int(self.input_px/2)+1])
+        features.append(self.deforestation_now[y-int(self.input_px/2):y+int(self.input_px/2)+1, x-int(self.input_px/2):x+int(self.input_px/2)+1].unsqueeze(0))
+        return torch.cat(features)
 
     def __getitem__(self, idx):
 
