@@ -31,3 +31,4 @@ conda install python=3.8.5
 conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 conda install pytorch-lightning
 conda install tensorboard
+conda install rasterio

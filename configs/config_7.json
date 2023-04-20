@@ -5,7 +5,7 @@
     "lr": 0.0005,
     "loss_fn": "BCEWithLogitsLoss",
     "architecture": "original",
-    "root_path": "/cluster/scratch/tengelmann/future-deforestation/",
+    "root_path": "",
     "num_workers": 10
 }
 
