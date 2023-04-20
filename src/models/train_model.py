@@ -6,12 +6,12 @@ import os
 import json
 import sys
 
-def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, output_px=1, input_px=35, root_path=""):
+def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, output_px=1, input_px=35, root_path=""):
     train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-    val_dataset = DeforestationDataset("val", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
+    val_dataset = DeforestationDataset("val", max_elements=1000, output_px=output_px, input_px=input_px, root_path=root_path)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader

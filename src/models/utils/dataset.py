@@ -20,6 +20,8 @@ class DeforestationDataset(Dataset):
         self.root_path = root_path
 
         self.data = torch.load(root_path + f"data/processed/{dataset}_data.pt")
+        if max_elements is not None:
+            self.data = self.data[:max_elements]
         
         # helpers
         self.augmentation = int((delta-input_px)/2)
@@ -28,20 +30,14 @@ class DeforestationDataset(Dataset):
     def __len__(self):
         return self.data.shape[0]
     
-    def get_target(self, x, y):
+    def get_targets(self, x, y):
         path = self.root_path + f"data/processed/{30}m/deforestation/" + f"deforestation_{self.year + self.future_horizon}.tif"
         with rasterio.open(path) as src:
             # Define the window
-            window = ((x, x+1), (y, y+1))
+            window = Window(x-self.augmentation, y-self.augmentation, 2*self.augmentation+1, 2*self.augmentation+1)
             data = src.read(window=window, boundless=True, fill_value=0, masked=False)
             data = data.squeeze().astype(np.uint8)
-        
-        if data == 4:
-            return 1
-        elif data == 2:
-            return 0
-        else:
-            return -1
+        return torch.from_numpy(data)
     
     def get_feature(self, x, y, year, data_type="landuse"):
         path = self.root_path + f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}.tif"
@@ -80,11 +76,18 @@ class DeforestationDataset(Dataset):
         target = 1 if self.data[idx, 2] == 4 else 0
 
         if self.dataset == "train":
-            target = -1
-            while target == -1:
-                x = x + torch.randint(-self.augmentation,self.augmentation,(1,)).item()
-                y = y + torch.randint(-self.augmentation,self.augmentation,(1,)).item()
-                target = self.get_target(x, y)
+            targets = self.get_targets(x, y)
+            xi = np.arange(0, targets.shape[1])
+            yi = np.arange(0, targets.shape[0])
+            xvi, yvi = np.meshgrid(xi, yi)
+            target_points = np.vstack((xvi.flatten(), yvi.flatten(), targets.flatten())).T
+            target_points = target_points[(target_points[:,2] == 2) | (target_points[:,2] == 4)]
+
+            # select random point from target points
+            target_point = target_points[torch.randint(0, target_points.shape[0],(1,)).item()]
+            x = target_point[0] - self.augmentation + x
+            y = target_point[1] - self.augmentation + y
+            target = 1 if target_point[2] == 4 else 0
 
         features = self.aggregate_features(x, y)
         
