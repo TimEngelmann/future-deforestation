@@ -100,11 +100,13 @@ def merge_mosaic(year=None, resolution=30, dst_crs="EPSG:6933"):
         "crs": dst_crs,
         "transform": transform,
         "width": width,
-        "height": height
+        "height": height,
+        "dtype": "uint8",
+        "compress": "DEFLATE"
     })
     
     path_out = f"../data/processed/{30}m/deforestation/"  + f"deforestation_{year}.tif"
-    with rasterio.open(path_out, "w", **out_meta, compress="DEFLATE") as dest:
+    with rasterio.open(path_out, "w", **out_meta) as dest:
         reproject(
             source=mosaic[0],
             destination=rasterio.band(dest, 1),
@@ -120,7 +122,8 @@ def preprocess_data():
     for year in [2010,2015]:
         land_use, out_meta = load_biomass_data(year)
         land_use = transform_landuse_to_labels(land_use)
-        with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_{year}.tif", "w", **out_meta, compress="DEFLATE") as dest:
+        out_meta.update({"dtype": "uint8", "compress": "DEFLATE"})
+        with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_{year}.tif", "w", **out_meta) as dest:
             dest.write(np.expand_dims(land_use, axis=0))
 
     # preprocess deforestation data
@@ -137,14 +140,12 @@ def compute_raster(year, delta, input_px=35):
     # only keep every delta pixel
     data = data[::delta,::delta]
     # create dataset with columns x, y, value
-    # reshape data to 1D array
-    data_points = data.reshape(-1)
     # get x and y coordinates
     x = np.arange(0, data.shape[1]) * delta
     y = np.arange(0, data.shape[0]) * delta
     xv, yv = np.meshgrid(x, y)
     # create array with x, y, value
-    data_points = np.vstack((xv.flatten(), yv.flatten(), data_points)).T
+    data_points = np.vstack((xv.flatten(), yv.flatten(), data.flatten())).T
 
     # filter datapoints to only keep values that are 2 or 4
     data_points = data_points[(data_points[:,2] == 2) | (data_points[:,2] == 4)]
@@ -177,11 +178,33 @@ def compute_raster(year, delta, input_px=35):
 
     return train_data, val_data
 
+def aggregate_deforestation(dataset, past_horizons=[1,5,10]):
+    year = 2014 if dataset == "test" else 2009
+    path = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year}.tif"
+    with rasterio.open(path) as src:
+        deforestation_aggregated = src.read(fill_value=0).squeeze() == 4
+
+    for i in range(1,11):
+        if i in past_horizons:
+            suffix = "_test" if dataset == "test" else ""
+            out_path = f"data/processed/{30}m/aggregated/"  + f"aggregated_{i}{suffix}.tif"
+            out_meta = src.meta.copy()
+            out_meta.update({"dtype": "uint8", "nbits": 1, "compress": "DEFLATE"})
+            with rasterio.open(out_path, "w", **out_meta) as dest:
+                dest.write(np.expand_dims(deforestation_aggregated.astype(np.uint8), axis=0))
+            if i == past_horizons[-1]:
+                break
+
+        path = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year - i}.tif"
+        with rasterio.open(path) as src:
+            data = src.read(fill_value=0).squeeze() == 4
+            deforestation_aggregated = deforestation_aggregated | data
+
 def build_features(output_px=1, input_px=35, delta=50, resolution=30):
 
     # preprocess_data()
 
-    train_data, val_data = compute_raster(2010, delta, input_px) # on next year
+    train_data, val_data = compute_raster(2009, delta, input_px) # on next year
 
     # get height and width of the image
     with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_2010.tif") as src:
@@ -189,9 +212,14 @@ def build_features(output_px=1, input_px=35, delta=50, resolution=30):
         width = src.width
 
     dtype = np.int16 if np.maximum(height, width) <= 32767 else np.int32
-    torch.save(torch.from_numpy(train_data.astype(dtype)), 'data/processed/train_data.pt')
-    torch.save(torch.from_numpy(val_data.astype(dtype)), 'data/processed/val_data.pt')
-    # torch.save(torch.from_numpy(test_data.astype(dtype)), 'data/processed_transition/test_data.pt')
+    torch.save(torch.from_numpy(train_data.astype(dtype)), f'data/processed//{30}m/train_data.pt')
+    torch.save(torch.from_numpy(val_data.astype(dtype)), f'data/processed//{30}m/val_data.pt')
+    # torch.save(torch.from_numpy(test_data.astype(dtype)), f'data/processed/{30}m/test_data.pt')
+
+    # aggregate features
+    # aggregate_deforestation("train")
+    # aggregate_deforestation("test")
+    
 
 if __name__ == "__main__":
     output_px = 1

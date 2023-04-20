@@ -12,14 +12,14 @@ class DeforestationDataset(Dataset):
             dataset: "train", "val", "test"
         """
         self.dataset = dataset
-        self.year = 2015 if dataset == "test" else 2010
+        self.year = 2014 if dataset == "test" else 2009
         self.past_horizons = [1,5,10]
         self.future_horizon = 1
         self.resolution = resolution
         self.input_px = input_px
         self.root_path = root_path
 
-        self.data = torch.load(root_path + f"data/processed/{dataset}_data.pt")
+        self.data = torch.load(root_path + f"data/processed/{30}m/{dataset}_data.pt")
         if max_elements is not None:
             self.data = self.data[:max_elements]
         
@@ -40,7 +40,8 @@ class DeforestationDataset(Dataset):
         return torch.from_numpy(data)
     
     def get_feature(self, x, y, year, data_type="landuse"):
-        path = self.root_path + f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}.tif"
+        suffix = "_test" if self.dataset == "test" else ""
+        path = self.root_path + f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}{suffix}.tif"
         # Open the mosaic file
         with rasterio.open(path) as src:
             # Define the window
@@ -52,28 +53,17 @@ class DeforestationDataset(Dataset):
         return torch.from_numpy(data)
 
     def aggregate_features(self, x, y):
-        # load deforestation data of last ten years
-        deforestation_prior = []
-        for i in range(10):
-            deforestation_prior.append(self.get_feature(x, y, self.year - i, data_type="deforestation") == 4)
-        deforestation_prior = torch.stack(deforestation_prior)
-
         features = []
-        # add deforestation of last year to features
-        features.append(deforestation_prior[0].type(torch.bool))
-        # add deforestation of last 5 years to features
-        features.append(torch.sum(deforestation_prior[:5], axis=0, dtype=bool))
-        # add deforestation of last 10 years to features
-        features.append(torch.sum(deforestation_prior, axis=0, dtype=bool))
-        # add landuse data of current year to features
-        features.append(self.get_feature(x, y, self.year, data_type="landuse"))
+        for i in self.past_horizons:
+            features.append(self.get_feature(x, y, i, data_type="aggregated"))
+        features.append(self.get_feature(x, y, self.year, data_type="deforestation"))
         return torch.stack(features)
 
     def __getitem__(self, idx):
 
         x = self.data[idx, 0].item()
         y = self.data[idx, 1].item()
-        target = 1 if self.data[idx, 2] == 4 else 0
+        target = self.data[idx, 2].item()
 
         if self.dataset == "train":
             targets = self.get_targets(x, y)
@@ -81,14 +71,14 @@ class DeforestationDataset(Dataset):
             yi = np.arange(0, targets.shape[0])
             xvi, yvi = np.meshgrid(xi, yi)
             target_points = np.vstack((xvi.flatten(), yvi.flatten(), targets.flatten())).T
-            target_points = target_points[(target_points[:,2] == 2) | (target_points[:,2] == 4)]
+            target_points = target_points[target_points[:,2] == target]
 
             # select random point from target points
             target_point = target_points[torch.randint(0, target_points.shape[0],(1,)).item()]
             x = target_point[0] - self.augmentation + x
             y = target_point[1] - self.augmentation + y
-            target = 1 if target_point[2] == 4 else 0
-
+        
+        target = 1 if target == 4 else 0
         features = self.aggregate_features(x, y)
         
         if self.dataset == "train":
@@ -100,4 +90,4 @@ class DeforestationDataset(Dataset):
     
 if __name__ == "__main__":
     train_dataset = DeforestationDataset("train")
-    features, target = train_dataset[0]
+    features, target = train_dataset[20]
