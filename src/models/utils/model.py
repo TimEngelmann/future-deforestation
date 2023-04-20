@@ -19,12 +19,14 @@ class ForestModel(pl.LightningModule):
         else:
             self.loss_fn = torch.nn.MSELoss()
 
+        '''
         self.mse_metric = MeanSquaredError()
         self.rmse_metric = MeanSquaredError(squared=False)
         self.f1_metric = F1Score(task="binary")
         self.precision_metric = Precision(task="binary")
         self.recall_metric = Recall(task="binary")
         self.auroc_metric = AUROC(task="binary")
+        '''
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -57,12 +59,15 @@ class ForestModel(pl.LightningModule):
         metrics_batch["loss"] = loss
 
         output = torch.sigmoid(output)
+
+        '''
         metrics_batch["mse"] = self.mse_metric(output, target)
         metrics_batch["rmse"] = self.rmse_metric(output, target)
         metrics_batch["f1"] = self.f1_metric(output, target)
         metrics_batch["precision"] = self.precision_metric(output, target)
         metrics_batch["recall"] = self.recall_metric(output, target)
         metrics_batch["auroc"] = self.auroc_metric(output, target)
+        '''
 
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)

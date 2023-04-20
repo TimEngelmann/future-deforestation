@@ -7,7 +7,7 @@ import json
 import sys
 
 def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, output_px=1, input_px=35, root_path=""):
-    train_dataset = DeforestationDataset("train", max_elements=2000, output_px=output_px, input_px=input_px, root_path=root_path)
+    train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
@@ -23,10 +23,11 @@ def train_model(init_nr=None,
                 architecture="VGG",
                 output_px=1, input_px=35, 
                 accelerator='mps',
-                root_path=""):
+                root_path="",
+                num_workers=8):
     pl.seed_everything(42, workers=True)
 
-    train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px, root_path=root_path)
+    train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px, root_path=root_path, num_workers=num_workers)
     
     model = ForestModel(input_px, lr, loss_fn, architecture)
     if init_nr >= 0:
@@ -50,8 +51,8 @@ def train_model(init_nr=None,
     )
 
 if __name__ == "__main__":
-    # config_file = sys.argv[1]
-    config_file = "config"
+    config_file = sys.argv[1]
+    # config_file = "config"
     with open(f"configs/{config_file}.json", "r") as cfg:
         hyp = json.load(cfg)
     train_model(init_nr=hyp['init_nr'], 
@@ -60,5 +61,6 @@ if __name__ == "__main__":
                 lr=hyp['lr'], 
                 loss_fn=hyp['loss_fn'],
                 architecture=hyp['architecture'],
-                root_path=hyp['root_path'])
+                root_path=hyp['root_path'],
+                num_workers=hyp['num_workers'])
 
