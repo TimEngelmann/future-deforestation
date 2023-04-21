@@ -159,6 +159,13 @@ def compute_raster(year, delta, input_px=35):
     train_data_not_deforested = train_data_not_deforested[np.random.choice(train_data_not_deforested.shape[0], train_data_deforested.shape[0] * 4, replace=False)]
     train_data = np.vstack((train_data_deforested, train_data_not_deforested))
 
+    # downsample val data to have 20% labels 4
+    val_data_deforested = val_data[val_data[:,-1] == 4]
+    val_data_not_deforested = val_data[val_data[:,-1] == 2]
+    val_data_not_deforested = val_data_not_deforested[np.random.choice(val_data_not_deforested.shape[0], val_data_deforested.shape[0] * 4, replace=False)]
+    val_data_resampled = np.vstack((val_data_deforested, val_data_not_deforested))
+    np.random.shuffle(val_data_resampled)
+
     # statistics of the dataset
     print("Deforestation percentage: ", np.count_nonzero(data_points[:,-1] == 4)/data_points.shape[0])
     print("# train points: ", train_data.shape)
@@ -176,7 +183,7 @@ def compute_raster(year, delta, input_px=35):
     plt.savefig('reports/figures/data_split/train_val_data_split.png')
     plt.close()
 
-    return train_data, val_data
+    return train_data, val_data, val_data_resampled
 
 def aggregate_deforestation(dataset, past_horizons=[1,5,10]):
     year = 2014 if dataset == "test" else 2009
@@ -204,7 +211,7 @@ def build_features(output_px=1, input_px=35, delta=50, resolution=30):
 
     # preprocess_data()
 
-    train_data, val_data = compute_raster(2009, delta, input_px) # on next year
+    train_data, val_data, val_data_resampled = compute_raster(2009, delta, input_px) # on next year
 
     # get height and width of the image
     with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_2010.tif") as src:
@@ -212,9 +219,10 @@ def build_features(output_px=1, input_px=35, delta=50, resolution=30):
         width = src.width
 
     dtype = np.int16 if np.maximum(height, width) <= 32767 else np.int32
-    torch.save(torch.from_numpy(train_data.astype(dtype)), f'data/processed//{30}m/train_data.pt')
-    torch.save(torch.from_numpy(val_data.astype(dtype)), f'data/processed//{30}m/val_data.pt')
+    # torch.save(torch.from_numpy(train_data.astype(dtype)), f'data/processed//{30}m/train_data.pt')
+    # torch.save(torch.from_numpy(val_data.astype(dtype)), f'data/processed//{30}m/val_data.pt')
     # torch.save(torch.from_numpy(test_data.astype(dtype)), f'data/processed/{30}m/test_data.pt')
+    torch.save(torch.from_numpy(val_data_resampled.astype(dtype)), f'data/processed/{30}m/val_resampled_data.pt')
 
     # aggregate features
     # aggregate_deforestation("train")
