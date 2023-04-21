@@ -15,7 +15,7 @@ class ForestModel(pl.LightningModule):
             self.model = compile_original_2D_CNN(input_width=input_width)
         
         if loss_fn == "BCEWithLogitsLoss":
-            self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(2.0))
+            self.loss_fn = torch.nn.BCEWithLogitsLoss()
         else:
             self.loss_fn = torch.nn.MSELoss()
 

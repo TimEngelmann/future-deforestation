@@ -1,7 +1,7 @@
 {
     "init_nr": -1,
-    "accelerator": "mps",
-    "max_epochs": 2,
+    "accelerator": "cuda",
+    "max_epochs": 200,
     "lr": 0.0005,
     "loss_fn": "BCEWithLogitsLoss",
     "architecture": "original",

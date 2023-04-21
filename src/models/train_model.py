@@ -51,8 +51,8 @@ def train_model(init_nr=None,
     )
 
 if __name__ == "__main__":
-    # config_file = sys.argv[1]
-    config_file = "config"
+    config_file = sys.argv[1]
+    # config_file = "config"
     with open(f"configs/{config_file}.json", "r") as cfg:
         hyp = json.load(cfg)
     train_model(init_nr=hyp['init_nr'], 

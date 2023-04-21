@@ -100,7 +100,7 @@ class DeforestationDataset(Dataset):
             yi = np.arange(0, targets.shape[0])
             xvi, yvi = np.meshgrid(xi, yi)
             target_points = np.vstack((xvi.flatten(), yvi.flatten(), targets.flatten())).T
-            target_points = target_points[target_points[:,2] == target]
+            target_points = target_points[(target_points[:,2] == 2) | (target_points[:,2] == 4)]
 
             # select random point from target points
             target_point = target_points[torch.randint(0, target_points.shape[0],(1,)).item()]
