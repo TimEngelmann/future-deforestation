@@ -131,24 +131,47 @@ def preprocess_data():
         merge_mosaic(year)
 
 def compute_raster(year, delta, input_px=35):
-    path = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year+1}.tif"
-    # Open the mosaic file
-    with rasterio.open(path) as src:
-        data = src.read()
-        data = data.squeeze()
+    path_target = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year+1}.tif"
+    with rasterio.open(path_target) as src:
+        target = src.read()
+        target = target.squeeze().astype(np.uint8)
+        target = np.pad(target, ((0, delta - target.shape[0] % delta), (0, delta - target.shape[1] % delta)), mode='constant')
+        target = torch.from_numpy(target)
 
-    # only keep every delta pixel
-    data = data[::delta,::delta]
+    path_current = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year}.tif"
+    with rasterio.open(path_current) as src:
+        current = src.read()
+        current = current.squeeze().astype(np.uint8)
+        current = np.pad(current, ((0, delta - current.shape[0] % delta), (0, delta - current.shape[1] % delta)), mode='constant')
+        current = torch.from_numpy(current)
+
+    target = target[int(delta/2)::delta,int(delta/2)::delta]
+    current = current[int(delta/2)::delta,int(delta/2)::delta]
+
+    distance = 101
+    path_deforestation = f"data/processed/{30}m/aggregated/"  + f"aggregated_{5}.tif"
+    with rasterio.open(path_deforestation) as src:
+        deforestation = src.read()
+        deforestation = deforestation.squeeze().astype(bool)
+        deforestation = np.pad(deforestation, ((int((distance-delta)/2), 0), (int((distance-delta)/2), 0)), mode='constant')
+        deforestation = np.pad(deforestation, ((0, distance - deforestation.shape[0] % distance), (0, distance - deforestation.shape[1] % distance)), mode='constant')
+        deforestation = torch.from_numpy(deforestation)
+
+    # deforestation = torch.sum(deforestation.unfold(0, distance, delta).unfold(1, distance, delta), dim=(2,3)) # 5 year
+    filters = torch.ones(1,1,distance,distance).type(torch.uint8)
+    deforestation = torch.nn.functional.conv2d(deforestation.unsqueeze(0).type(torch.uint8), filters, stride=delta)[0]
+
     # create dataset with columns x, y, value
     # get x and y coordinates
-    x = np.arange(0, data.shape[1]) * delta
-    y = np.arange(0, data.shape[0]) * delta
+    x = np.arange(0, target.shape[1]) * delta + int(delta/2)
+    y = np.arange(0, target.shape[0]) * delta + int(delta/2)
     xv, yv = np.meshgrid(x, y)
     # create array with x, y, value
-    data_points = np.vstack((xv.flatten(), yv.flatten(), data.flatten())).T
+    data_points = np.vstack((xv.flatten(), yv.flatten(), target.flatten(), current.flatten(), deforestation.flatten())).T
 
     # filter datapoints to only keep values that are 2 or 4
-    data_points = data_points[(data_points[:,2] == 2) | (data_points[:,2] == 4)]
+    data_points = data_points[((data_points[:,3] == 2) & ((data_points[:,2] == 2) | (data_points[:,2] == 4)) & (data_points[:,4] > 0))]
+    data_points = data_points[:,:-2]
 
     # split datapoints into train and validation set
     train_data, val_data = train_test_split(data_points, test_size=0.2, random_state=42, stratify=data_points[:,-1])
@@ -177,11 +200,12 @@ def compute_raster(year, delta, input_px=35):
     # plot data split
     # plot layers
     fig, axs = plt.subplots(figsize=(15,10))
-    axs.scatter(val_data[:,0], val_data[:,1], s=0.001, c='red', alpha=1)
-    axs.scatter(train_data[:,0], train_data[:,1], s=0.1, c='k', alpha=1)
+    axs.scatter(val_data[:,0], val_data[:,1], s=0.01, c='red', alpha=1)
+    axs.scatter(train_data[:,0], train_data[:,1], s=0.01, c='k', alpha=1)
     axs.set_aspect('equal', 'box')
     axs.set_title('Train and Validation Data Split')
     axs.legend(['Validation Data', 'Train Data'])
+    axs.invert_yaxis()
     plt.savefig('reports/figures/data_split/train_val_data_split.png')
     plt.close()
 
@@ -221,8 +245,8 @@ def build_features(output_px=1, input_px=35, delta=50, resolution=30):
         width = src.width
 
     dtype = np.int16 if np.maximum(height, width) <= 32767 else np.int32
-    torch.save(torch.from_numpy(train_data.astype(dtype)), f'data/processed//{30}m/train_data.pt')
-    torch.save(torch.from_numpy(val_data.astype(dtype)), f'data/processed//{30}m/val_data.pt')
+    torch.save(torch.from_numpy(train_data.astype(dtype)), f'data/processed/{30}m/train_data.pt')
+    torch.save(torch.from_numpy(val_data.astype(dtype)), f'data/processed/{30}m/val_data.pt')
     # torch.save(torch.from_numpy(test_data.astype(dtype)), f'data/processed/{30}m/test_data.pt')
 
     # aggregate features
@@ -233,6 +257,6 @@ def build_features(output_px=1, input_px=35, delta=50, resolution=30):
 if __name__ == "__main__":
     output_px = 1
     input_px = 35
-    delta = 50
+    delta = 55
     resolution = 30
     build_features(output_px, input_px, delta, resolution)

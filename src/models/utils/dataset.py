@@ -18,7 +18,7 @@ def load_entire(year, data_type="landuse", dataset="train"):
     return torch.from_numpy(data)
 
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, resolution=30, input_px=35, output_px=1, delta=50, max_elements=None, root_path=""):
+    def __init__(self, dataset, resolution=30, input_px=35, output_px=1, max_elements=None, root_path=""):
         """
         Args:
             dataset: "train", "val", "test"
@@ -31,98 +31,40 @@ class DeforestationDataset(Dataset):
         self.input_px = input_px
         self.root_path = root_path
 
-        print(f"starting to load {dataset} data")
-        sys.stdout.flush()
-
-        self.data = torch.load(root_path + f"data/processed/{30}m/{dataset}_data.pt")
+        self.data = torch.load(root_path + f"data/processed/{30}m/{dataset}_features.pt")
         if max_elements is not None:
             self.data = self.data[:max_elements]
         
-        print(f"loaded {dataset} data")
-        sys.stdout.flush()
-        
         # helpers
-        self.augmentation = int((delta-input_px)/2)
         self.i = torch.tensor(int(input_px/2))
-
-        # load features
-        self.aggregated = []
-        for i in self.past_horizons:
-            self.aggregated.append(load_entire(i, data_type="aggregated"))
-            print(f"loaded {dataset} aggregated data for year {i}")
-            sys.stdout.flush()
-        self.aggregated = torch.stack(self.aggregated)
-
-        self.deforestation_now = load_entire(self.year, data_type="deforestation")
-        print(f"loaded {dataset} deforestation data for year {self.year}")
-        sys.stdout.flush()
-
-        self.deforestation_future = load_entire(self.year + self.future_horizon, data_type="deforestation")
-        print(f"loaded {dataset} deforestation data for year {self.year + self.future_horizon}")
-        sys.stdout.flush()
+        self.delta = self.data.shape[-1]
+        self.mid = int(self.delta/2)
+        self.augmentation = int((self.delta-input_px)/2)
         
     def __len__(self):
         return self.data.shape[0]
-    
-    def get_targets(self, x, y):
-        '''
-        path = self.root_path + f"data/processed/{30}m/deforestation/" + f"deforestation_{self.year + self.future_horizon}.tif"
-        with rasterio.open(path) as src:
-            # Define the window
-            window = Window(x-self.augmentation, y-self.augmentation, 2*self.augmentation+1, 2*self.augmentation+1)
-            data = src.read(window=window, boundless=True, fill_value=0, masked=False)
-            data = data.squeeze().astype(np.uint8)
-        return torch.from_numpy(data)
-        '''
-        return self.deforestation_future[y-self.augmentation:y+self.augmentation+1, x-self.augmentation:x+self.augmentation+1]
-    
-    def get_feature(self, x, y, year, data_type="landuse"):
-        suffix = "_test" if self.dataset == "test" else ""
-        path = self.root_path + f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}{suffix}.tif"
-        # Open the mosaic file
-        with rasterio.open(path) as src:
-            # Define the window
-            window = Window(x - int(self.input_px/2), y - int(self.input_px/2), self.input_px, self.input_px)
-            # Read the data from the window, ensure that it is filled with nodata
-            fill_value = 255 if data_type == "landuse" else 0
-            data = src.read(window=window, boundless=True, fill_value=fill_value)
-            data = data.squeeze().astype(np.uint8)
-        return torch.from_numpy(data)
-
-    def aggregate_features(self, x, y):
-        '''
-        features = []
-        for i in self.past_horizons:
-            features.append(self.get_feature(x, y, i, data_type="aggregated"))
-        features.append(self.get_feature(x, y, self.year, data_type="deforestation"))
-        return torch.stack(features)
-        '''
-        features = []
-        features.append(self.aggregated[:, y-int(self.input_px/2):y+int(self.input_px/2)+1, x-int(self.input_px/2):x+int(self.input_px/2)+1])
-        features.append(self.deforestation_now[y-int(self.input_px/2):y+int(self.input_px/2)+1, x-int(self.input_px/2):x+int(self.input_px/2)+1].unsqueeze(0))
-        return torch.cat(features)
 
     def __getitem__(self, idx):
 
-        x = self.data[idx, 0].item()
-        y = self.data[idx, 1].item()
-        target = self.data[idx, 2].item()
+        x = self.mid
+        y = self.mid
 
         if self.dataset == "train":
-            targets = self.get_targets(x, y)
-            xi = np.arange(0, targets.shape[1])
-            yi = np.arange(0, targets.shape[0])
-            xvi, yvi = np.meshgrid(xi, yi)
-            target_points = np.vstack((xvi.flatten(), yvi.flatten(), targets.flatten())).T
-            target_points = target_points[(target_points[:,2] == 2) | (target_points[:,2] == 4)]
+            xi = np.arange(x-self.augmentation, x+self.augmentation+1)
+            xvi, yvi = np.meshgrid(xi, xi)
+            current = self.data[idx, -2, y-self.augmentation:y+self.augmentation+1, x-self.augmentation:x+self.augmentation+1]
+            targets = self.data[idx, -1, y-self.augmentation:y+self.augmentation+1, x-self.augmentation:x+self.augmentation+1]
+            target_points = np.vstack((xvi.flatten(), yvi.flatten(), targets.flatten(), current.flatten())).T
+            target_points = target_points[((target_points[:,3] == 2) & (target_points[:,2] == 2) | (target_points[:,2] == 4))]
 
             # select random point from target points
             target_point = target_points[torch.randint(0, target_points.shape[0],(1,)).item()]
-            x = target_point[0] - self.augmentation + x
-            y = target_point[1] - self.augmentation + y
+            x = target_point[0]
+            y = target_point[1]
         
+        features = self.data[idx, :-1, x-self.i:x+self.i+1, y-self.i:y+self.i+1]
+        target = self.data[idx, -1, x, y].item()
         target = 1 if target == 4 else 0
-        features = self.aggregate_features(x, y)
         
         if self.dataset == "train":
             angles = [0,90,180,270]

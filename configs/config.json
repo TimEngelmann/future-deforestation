@@ -6,6 +6,6 @@
     "loss_fn": "BCEWithLogitsLoss",
     "architecture": "original",
     "root_path": "",
-    "num_workers": 0
+    "num_workers": 10
 }
 
