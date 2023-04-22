@@ -4,6 +4,7 @@ from torch.utils.data import Dataset
 import rasterio
 from rasterio.windows import Window
 import numpy as np
+import sys
 
 def load_entire(year, data_type="landuse", dataset="train"):
     suffix = "_test" if dataset == "test" else ""
@@ -30,9 +31,15 @@ class DeforestationDataset(Dataset):
         self.input_px = input_px
         self.root_path = root_path
 
+        print(f"starting to load {dataset} data")
+        sys.stdout.flush()
+
         self.data = torch.load(root_path + f"data/processed/{30}m/{dataset}_data.pt")
         if max_elements is not None:
             self.data = self.data[:max_elements]
+        
+        print(f"loaded {dataset} data")
+        sys.stdout.flush()
         
         # helpers
         self.augmentation = int((delta-input_px)/2)
@@ -42,10 +49,17 @@ class DeforestationDataset(Dataset):
         self.aggregated = []
         for i in self.past_horizons:
             self.aggregated.append(load_entire(i, data_type="aggregated"))
+            print(f"loaded {dataset} aggregated data for year {i}")
+            sys.stdout.flush()
         self.aggregated = torch.stack(self.aggregated)
 
         self.deforestation_now = load_entire(self.year, data_type="deforestation")
+        print(f"loaded {dataset} deforestation data for year {self.year}")
+        sys.stdout.flush()
+
         self.deforestation_future = load_entire(self.year + self.future_horizon, data_type="deforestation")
+        print(f"loaded {dataset} deforestation data for year {self.year + self.future_horizon}")
+        sys.stdout.flush()
         
     def __len__(self):
         return self.data.shape[0]
