@@ -5,6 +5,7 @@ from utils.model import ForestModel
 import os
 import json
 import sys
+from pytorch_lightning.callbacks import TQDMProgressBar
 
 def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, output_px=1, input_px=35, root_path=""):
     train_dataset = DeforestationDataset("train", max_elements=max_elements, output_px=output_px, input_px=input_px, root_path=root_path)
@@ -24,12 +25,14 @@ def train_model(init_nr=None,
                 output_px=1, input_px=35, 
                 accelerator='mps',
                 root_path="",
-                num_workers=8):
+                num_workers=8,
+                dropout=0.0,
+                weight_decay=0.0):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(max_elements=None, output_px=output_px, input_px=input_px, root_path=root_path, num_workers=num_workers)
     
-    model = ForestModel(input_px, lr, loss_fn, architecture)
+    model = ForestModel(input_px, lr, loss_fn, architecture, dropout, weight_decay)
     if init_nr >= 0:
         init_path = f"lightning_logs/version_{init_nr}/checkpoints/"
         checkpoints = [checkpoint for checkpoint in os.listdir(init_path) if ".ckpt" in checkpoint]
@@ -41,7 +44,8 @@ def train_model(init_nr=None,
         devices=1,
         max_epochs=max_epochs,
         log_every_n_steps=10,
-        deterministic=False
+        deterministic=False,
+        callbacks=[TQDMProgressBar(refresh_rate=100)]
     )
 
     trainer.fit(
@@ -62,5 +66,7 @@ if __name__ == "__main__":
                 loss_fn=hyp['loss_fn'],
                 architecture=hyp['architecture'],
                 root_path=hyp['root_path'],
-                num_workers=hyp['num_workers'])
+                num_workers=hyp['num_workers'],
+                dropout=hyp['dropout'],
+                weight_decay=hyp['weight_decay'])
 

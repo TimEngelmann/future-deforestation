@@ -1,14 +1,14 @@
 import torch
 import numpy as np
 
-def compile_original_2D_CNN(input_width=35):
+def compile_original_2D_CNN(input_width=35, dropout=0):
     input_dim=4
     hidden_dim=[64, 128, 128]
     kernel_size=[(5, 5), (5, 5), (3, 3), (3, 3)]
     stride=[(2, 2), (1, 1), (1, 1), (1, 1)]
     padding=[0, 0, 0, 0]
     maxpool_dim = 10
-    dropout=0.0
+    dropout=dropout
     output_dim=1
     input_width=input_width
 

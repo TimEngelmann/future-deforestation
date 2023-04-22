@@ -5,14 +5,14 @@ from torchmetrics import MeanSquaredError, F1Score, Precision, Recall, AUROC
 
 class ForestModel(pl.LightningModule):
 
-    def __init__(self, input_width, lr, loss_fn, architecture):
+    def __init__(self, input_width, lr, loss_fn, architecture, dropout=0, weight_decay=0):
         super().__init__()
         self.save_hyperparameters()
 
         if architecture == "VGG":
             self.model = compile_VGG_CNN(input_width=input_width)
         else:
-            self.model = compile_original_2D_CNN(input_width=input_width)
+            self.model = compile_original_2D_CNN(input_width=input_width, dropout=dropout)
         
         if loss_fn == "BCEWithLogitsLoss":
             self.loss_fn = torch.nn.BCEWithLogitsLoss()
@@ -33,6 +33,7 @@ class ForestModel(pl.LightningModule):
         self.test_step_outputs = []
 
         self.lr = lr
+        self.weight_decay = weight_decay
 
     def forward(self, features):
         output = self.model(features)
@@ -120,4 +121,4 @@ class ForestModel(pl.LightningModule):
         return output
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=0.0)
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
