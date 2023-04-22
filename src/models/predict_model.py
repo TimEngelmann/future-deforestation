@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
-    val_dataset = DeforestationDataset("val_resampled", max_elements=max_elements)
+    val_dataset = DeforestationDataset("val", max_elements=max_elements)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     # test_dataset = DeforestationDataset("test", max_elements=max_elements)
@@ -20,7 +20,6 @@ def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
 def predict_model(model_nr):
     path = f"lightning_logs/version_{model_nr}/"
 
-    '''
     val_loader, test_loader = get_data_loaders(max_elements=None)
     
     model_names = [name for name in os.listdir(path+"checkpoints/") if ".ckpt" in name]
@@ -35,12 +34,11 @@ def predict_model(model_nr):
 
     val_predictions =  trainer.predict(model, val_loader)
     val_predictions = torch.cat(val_predictions)
-    torch.save(val_predictions, path + "val_resampled_predictions.pt")
+    torch.save(val_predictions, path + "val_predictions.pt")
     # valid_metrics = trainer.validate(model, dataloaders=val_loader, verbose=False)
-    '''
 
-    val_predictions = torch.load(path + "val_resampled_predictions.pt")
-    val_targets = torch.load("data/processed/30m/val_resampled_data.pt")[:,-1] == 4
+    val_predictions = torch.load(path + "val_predictions.pt")
+    val_targets = torch.load("data/processed/30m/val_features.pt")[:,-1, 27, 27] == 4
 
     # plot distribution normalized
     plt.hist(val_targets.float(), bins=20, alpha=0.5, color='lightgrey')
@@ -48,7 +46,7 @@ def predict_model(model_nr):
     plt.legend(["Target", "Prediction"])
     plt.xlabel("Probability of deforestation")
     plt.ylabel("Count")
-    plt.savefig(path + "val_resampled_hist.png")
+    plt.savefig(path + "val_hist.png")
     plt.close()
 
     fpr, tpr, thresholds = roc_curve(val_targets, val_predictions)
@@ -70,7 +68,7 @@ def predict_model(model_nr):
     plt.axis("square")
     plt.xlabel("FPR")
     plt.ylabel("TPR")
-    plt.savefig(path + "val_resampled_roc_curve.png")
+    plt.savefig(path + "val_roc_curve.png")
     plt.close()
 
     precision, recall, thresholds = precision_recall_curve(val_targets, val_predictions)
@@ -79,7 +77,7 @@ def predict_model(model_nr):
     plt.axis("square")
     plt.xlabel("Recall")
     plt.ylabel("Precision")
-    plt.savefig(path + "val_resampled_precision_recall_curve.png")
+    plt.savefig(path + "val_precision_recall_curve.png")
     plt.close()
 
     thresholds = np.arange(0.0, 1.0, 0.001)
@@ -97,7 +95,7 @@ def predict_model(model_nr):
     plt.axis("square")
     plt.xlabel("Threshold")
     plt.ylabel("F1-Score")
-    plt.savefig(path + "val_resampled_f1_score.png")
+    plt.savefig(path + "val_f1_score.png")
 
     thresholdOpt = thresholds[np.argmax(fscore)]
     print("Chosen threshold: ", thresholdOpt)
@@ -125,5 +123,5 @@ def predict_model(model_nr):
     '''
 
 if __name__ == "__main__":
-    model_nr = 8
+    model_nr = 9
     predict_model(model_nr)
