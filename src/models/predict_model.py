@@ -123,5 +123,5 @@ def predict_model(model_nr):
     '''
 
 if __name__ == "__main__":
-    model_nr = 9
+    model_nr = 12
     predict_model(model_nr)
