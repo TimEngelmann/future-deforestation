@@ -11,6 +11,8 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import os
 from rasterio.merge import merge
 import cv2
+import pandas as pd
+import plotly.express as px
 
 
 # function to transform labels to 1=forest, 2=natural, 3=farming, 4=urban, 5=water, 0=unknown
@@ -45,13 +47,13 @@ def preprocess_file(year, dst_crs, resolution, data_type="landuse"):
         bounds = rasterio.transform.array_bounds(height, width, src_transform)
 
     else:
-        file_suffix = "-pasture-quality" if data_type is "pasture" else ""
+        file_suffix = "-pasture-quality" if data_type == "pasture" else ""
         input_path = f"data/raw/biomass/amazonia/{resolution}m/{data_type}/" + f"mapbiomas-brazil-collection-70{file_suffix}-amazonia-{year}.tif"
 
         src = rasterio.open(input_path)
         data = src.read(1)
 
-        if data_type is "landuse":
+        if data_type == "landuse":
             data = transform_landuse_to_labels(data)
 
         width = src.width
@@ -107,13 +109,13 @@ def preprocess_data(dst_crs="EPSG:6933", resolution=30):
 
 # load window from raster
 def load_window(year, window_size=5100, offset=[0,0], data_type="landuse"):
-    path = f"../data/processed/{data_type}/" + f"{data_type}_{year}.tif"
+    path = f"data/processed/{data_type}/" + f"{data_type}_{year}.tif"
     with rasterio.open(path) as src:
         fill_value = 0
         window = rasterio.windows.Window(offset[0], offset[1], window_size, window_size)
         data = src.read(window=window, fill_value=fill_value, boundless=True)
         data = data.squeeze().astype(np.uint8)
-    return torch.from_numpy(data)
+    return data
 
 def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
     bio_data_src = rasterio.open("data/processed/deforestation/deforestation_2009.tif")
@@ -131,6 +133,10 @@ def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
             tiles_to_load.append(slope_data_src)
         else:
             slope_data_src.close()
+
+    if len(tiles_to_load) == 0:
+        return np.zeros((window_size, window_size), np.float16)
+
     slope_data, slope_data_transform = merge(tiles_to_load)
 
     # Get bounds of the merged mosaic
@@ -159,13 +165,15 @@ def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
                                              (0, window_size - slope_data_new.shape[1])),
                                             mode="constant", constant_values=0)
     slope_data_new = slope_data_new.squeeze().astype(np.float16)
-    return torch.from_numpy(slope_data_new)
+    return slope_data_new
 
 
 # iterate trough raster loading features and target iteratively avoiding memory issues
-def iterate_trough_raster(delta=55, window_multiple=500, overlap=10000, dataset="train"):
+def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="train", filter_px=50):
     past_horizons = [1, 5, 10]
     future_horizon = 1
+
+    mid = int(delta/2)
 
     year = 2014 if dataset == "test" else 2009
     window_size_small = delta * window_multiple
@@ -182,9 +190,16 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=10000, dataset=
             if file.endswith(".tif"):
                 path_fabdem_tiles.append(os.path.join(root, file))
 
-    data_points = []
+    # create tmp folder if doesnt exist
+    if not os.path.exists("data/processed/tmp"):
+        os.makedirs("data/processed/tmp")
+
+    filtered_loss = 0
+    px_of_interest = 0
     for window_x in range(0, int(width / window_size_small) + 1):
         for window_y in range(0, int(height / window_size_small) + 1):
+    # for window_x in range(4, 6):
+        # for window_y in range(4, 6):
             print(f"Loading window {window_x}, {window_y}")
 
             offset_large = [window_x * window_size_small - overlap, window_y * window_size_small - overlap]
@@ -197,19 +212,25 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=10000, dataset=
             deforestation_aggregated = current_deforestation == 4
             for i in range(1, 11):
                 if i in past_horizons:
-                    deforestation_distance = cv2.distanceTransform(deforestation_aggregated is False, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                    features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(torch.float16))
+                    if np.count_nonzero(deforestation_aggregated) == 0:
+                        features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+                    else:
+                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                        features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
                     if i == past_horizons[-1]:
                         break
-                data = load_window(year, window_size=window_size_large, offset=offset_large, data_type="deforestation") == 4
+                data = load_window(year-i, window_size=window_size_large, offset=offset_large, data_type="deforestation") == 4
                 deforestation_aggregated = deforestation_aggregated | data
 
             # load current landuse
             landuse = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
 
             # get urban distance
-            urban_distance = cv2.distanceTransform(landuse != 4, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE).astype(np.float16)
-            features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(torch.float16))
+            if np.count_nonzero(landuse == 4) == 0:
+                features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+            else:
+                urban_distance = cv2.distanceTransform((landuse != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
 
             # get slope data
             features.append(load_slope_data(path_fabdem_tiles, window_size=window_size_small, offset=offset_small))
@@ -219,151 +240,117 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=10000, dataset=
             features.append(load_window(year, window_size=window_size_small, offset=offset_small, data_type="pasture"))
             features.append(current_deforestation[overlap:-overlap, overlap:-overlap])
             features.append(load_window(year+future_horizon, window_size=window_size_small, offset=offset_small, data_type="deforestation"))
-            features = torch.stack(features)
 
             '''
+            for idx, feature in enumerate(features):
+                if idx < 5:
+                    plt.imshow(feature[mid::delta, mid::delta])
+                elif idx == 5:
+                    cmap = colors.ListedColormap(['#D5D5E5', '#129912', '#bbfcac', '#ffffb2', '#ea9999', '#0000ff'])
+                    plt.imshow(feature[mid::delta, mid::delta], cmap=cmap, vmin=-0.5, vmax=5.5, interpolation='nearest')
+                elif idx == 6:
+                    cmap = colors.ListedColormap(['#D5D5E5', '#930D03', '#FA9E4F', '#2466A7'])
+                    plt.imshow(feature[mid::delta, mid::delta], cmap=cmap, vmin=-0.5, vmax=3.5, interpolation='nearest')
+                else:
+                    cmap = colors.ListedColormap(['#D5D5E5', '#FFFCB5', '#0F5018', '#409562', '#D90016', '#87FF0A', '#FD9407', '#191919'])
+                    plt.imshow(feature[mid::delta, mid::delta], cmap=cmap, vmin=-0.5, vmax=7.5, interpolation='nearest')
+
+                plt.show()
+            '''
+
+            features = [torch.from_numpy(feature) for feature in features]
+            features = torch.stack(features)
+
             features = features.unfold(1, delta, delta).unfold(2, delta, delta)
-            features = features.moveaxis(0, 2)
+            features = features.moveaxis(0,2)
 
-            train_indices = train_data[(train_data[:,0] < (offset[0]+window_size)) 
-                                 & (train_data[:,1] < (offset[1]+window_size)) 
-                                 & (train_data[:,0] > (offset[0]))
-                                 & (train_data[:,1] > (offset[1]))]
-    
-            if len(train_indices) > 0:
-                train_indices = ((train_indices[:,:2] - torch.tensor(offset)) / delta).type(torch.int)
-                train_features.append(features[train_indices[:,1], train_indices[:,0], :, :, :])
+            target = features[:, :, -1, mid, mid]
+            current = features[:, :, -2, mid, mid]
+            distance = features[:, :, 1, mid, mid] # 0=1 year , 1=5 years, 2=10 years
+            filter_points = ((target == 4) | (target == 2)) & (current == 2) & (distance <= filter_px)
 
-            val_indices = val_data[(val_data[:, 0] < (offset[0] + window_size))
-                                   & (val_data[:, 1] < (offset[1] + window_size))
-                                   & (val_data[:, 0] > (offset[0]))
-                                   & (val_data[:, 1] > (offset[1]))]
+            # keep track of filtering
+            px_of_interest_batch = np.count_nonzero((target == 4) & (current == 2))
+            px_of_interest_batch_kept = np.count_nonzero((target == 4) & (current == 2) & (distance <= filter_px))
+            filtered_loss += px_of_interest_batch - px_of_interest_batch_kept
+            px_of_interest += px_of_interest_batch
 
-            if len(val_indices) > 0:
-                val_indices = ((val_indices[:, :2] - torch.tensor(offset)) / delta).type(torch.int)
-                val_features.append(features[val_indices[:, 1], val_indices[:, 0], :, :, :])
+            # indices = filter_points.nonzero() * delta + mid + torch.tensor([offset_small[1], offset_small[0]])
+            indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
+            data_features = torch.cat([indices, features[filter_points][:, :, mid, mid]], dim=1) # y, x, features
+            data_layers = features[filter_points]
 
-    # train_features = torch.cat(train_features, dim=0)
-    val_features = torch.cat(val_features, dim=0)
+            torch.save(data_features, f"data/processed/tmp/data_features_{window_x}_{window_y}.pt")
+            torch.save(data_layers, f"data/processed/tmp/data_layers_{window_x}_{window_y}.pt")
 
-    # torch.save(train_features, "../data/processed/30m/train_features.pt")
-    torch.save(val_features, "../data/processed/30m/val_features.pt")
-    '''
+    print("percentage of loss dropped: ", 1 - (filtered_loss / px_of_interest))
 
 
-def compute_raster(year, delta, input_px=35):
-    path_target = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year+1}.tif"
-    with rasterio.open(path_target) as src:
-        target = src.read()
-        target = target.squeeze().astype(np.uint8)
-        target = np.pad(target, ((0, delta - target.shape[0] % delta), (0, delta - target.shape[1] % delta)), mode='constant')
-        target = torch.from_numpy(target)
+def plot_data_split(train_features, val_features, delta=55, file_name="data_split.png"):
+    print("Deforestation percentage: ", np.count_nonzero(train_features[:, -1] == 4) / train_features.shape[0])
+    print("# train points: ", train_features.shape[0])
+    print("# val points: ", val_features.shape[0])
 
-    path_current = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year}.tif"
-    with rasterio.open(path_current) as src:
-        current = src.read()
-        current = current.squeeze().astype(np.uint8)
-        current = np.pad(current, ((0, delta - current.shape[0] % delta), (0, delta - current.shape[1] % delta)), mode='constant')
-        current = torch.from_numpy(current)
+    val_x = val_features[:,1].astype(int) * delta + int(delta/2)
+    val_y = val_features[:,0].astype(int) * delta + int(delta/2)
+    train_x = train_features[:,1].astype(int) * delta + int(delta/2)
+    train_y = train_features[:,0].astype(int) * delta + int(delta/2)
 
-    target = target[int(delta/2)::delta,int(delta/2)::delta]
-    current = current[int(delta/2)::delta,int(delta/2)::delta]
-
-    distance = 101
-    path_deforestation = f"data/processed/{30}m/aggregated/"  + f"aggregated_{5}.tif"
-    with rasterio.open(path_deforestation) as src:
-        deforestation = src.read()
-        deforestation = deforestation.squeeze().astype(bool)
-        deforestation = np.pad(deforestation, ((int((distance-delta)/2), 0), (int((distance-delta)/2), 0)), mode='constant')
-        deforestation = np.pad(deforestation, ((0, distance - deforestation.shape[0] % distance), (0, distance - deforestation.shape[1] % distance)), mode='constant')
-        deforestation = torch.from_numpy(deforestation)
-
-    # deforestation = torch.sum(deforestation.unfold(0, distance, delta).unfold(1, distance, delta), dim=(2,3)) # 5 year
-    filters = torch.ones(1,1,distance,distance).type(torch.uint8)
-    deforestation = torch.nn.functional.conv2d(deforestation.unsqueeze(0).type(torch.uint8), filters, stride=delta)[0]
-
-    # create dataset with columns x, y, value
-    # get x and y coordinates
-    x = np.arange(0, target.shape[1]) * delta + int(delta/2)
-    y = np.arange(0, target.shape[0]) * delta + int(delta/2)
-    xv, yv = np.meshgrid(x, y)
-    # create array with x, y, value
-    data_points = np.vstack((xv.flatten(), yv.flatten(), target.flatten(), current.flatten(), deforestation.flatten())).T
-
-    # filter datapoints to only keep values that are 2 or 4
-    data_points = data_points[((data_points[:,3] == 2) & ((data_points[:,2] == 2) | (data_points[:,2] == 4)) & (data_points[:,4] > 0))]
-    data_points = data_points[:,:-2]
-
-    # split datapoints into train and validation set
-    train_data, val_data = train_test_split(data_points, test_size=0.2, random_state=42, stratify=data_points[:,-1])
-
-    '''
-    # downsample train data to have 20% labels 4
-    train_data_deforested = train_data[train_data[:,-1] == 4]
-    train_data_not_deforested = train_data[train_data[:,-1] == 2]
-    train_data_not_deforested = train_data_not_deforested[np.random.choice(train_data_not_deforested.shape[0], train_data_deforested.shape[0] * 4, replace=False)]
-    train_data = np.vstack((train_data_deforested, train_data_not_deforested))
-
-    # downsample val data to have 20% labels 4
-    val_data_deforested = val_data[val_data[:,-1] == 4]
-    val_data_not_deforested = val_data[val_data[:,-1] == 2]
-    val_data_not_deforested = val_data_not_deforested[np.random.choice(val_data_not_deforested.shape[0], val_data_deforested.shape[0] * 4, replace=False)]
-    val_data_resampled = np.vstack((val_data_deforested, val_data_not_deforested))
-    np.random.shuffle(val_data_resampled)
-    '''
-
-    # statistics of the dataset
-    print("Deforestation percentage: ", np.count_nonzero(data_points[:,-1] == 4)/data_points.shape[0])
-    print("# train points: ", train_data.shape)
-    print("# val points: ", val_data.shape)
-    print("Allowed augmentation: ", int((delta-input_px)/2))
-
-    # plot data split
-    # plot layers
     fig, axs = plt.subplots(figsize=(15,10))
-    axs.scatter(val_data[:,0], val_data[:,1], s=0.01, c='red', alpha=1)
-    axs.scatter(train_data[:,0], train_data[:,1], s=0.01, c='k', alpha=1)
+    axs.scatter(val_x, val_y, s=0.01, c='red', alpha=1)
+    axs.scatter(train_x, train_y, s=0.01, c='k', alpha=1)
     axs.set_aspect('equal', 'box')
     axs.set_title('Train and Validation Data Split')
     axs.legend(['Validation Data', 'Train Data'])
     axs.invert_yaxis()
-    plt.savefig('reports/figures/data_split/train_val_data_split.png')
+    plt.savefig(f'reports/figures/{file_name}.png')
     plt.close()
 
-    return train_data, val_data
+
+def split_data(data_features, data_layers, delta):
+    # split datapoints into train and validation set
+    train_features, val_features, train_layers, val_layers = train_test_split(data_features, data_layers,
+                                                                              test_size=0.2, random_state=42,
+                                                                              stratify=data_features[:, -1])
+    plot_data_split(train_features, val_features, delta, file_name="data_split.png")
+    return train_features, val_features, train_layers, val_layers
 
 
-def build_features(output_px=1, input_px=35, delta=50, resolution=30):
+def build_features(dst_crs, resolution, delta, window_multiple, overlap, dataset, filter_px):
 
-    # preprocess_data()
+    # preprocess_data(dst_crs, resolution)
+    # iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
 
-    # train_data, val_data = compute_raster(2009, delta, input_px) # on next year
+    # load tmp data
+    data_features = []
+    data_layers = []
+    files = os.listdir('data/processed/tmp')
+    files.sort()
+    for file in files:
+        if file.endswith('.pt'):
+            if file.startswith('data_features'):
+                data_features.append(torch.load(f'data/processed/tmp/{file}'))
+            if file.startswith('data_layers'):
+                data_layers.append(torch.load(f'data/processed/tmp/{file}'))
+                
+    data_features = torch.cat(data_features, dim=0).numpy()
+    data_layers = torch.cat(data_layers, dim=0).numpy()
 
-    '''
-    # get height and width of the image
-    with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_2010.tif") as src:
-        height = src.height
-        width = src.width
+    train_features, val_features, train_layers, val_layers = split_data(data_features, data_layers, delta)
 
-    dtype = np.int16 if np.maximum(height, width) <= 32767 else np.int32
-    torch.save(torch.from_numpy(train_data.astype(dtype)), f'data/processed/{30}m/train_data.pt')
-    torch.save(torch.from_numpy(val_data.astype(dtype)), f'data/processed/{30}m/val_data.pt')
-    # torch.save(torch.from_numpy(test_data.astype(dtype)), f'data/processed/{30}m/test_data.pt')
-
-    # aggregate features
-    # aggregate_deforestation("train")
-    # aggregate_deforestation("test")
-    '''
-    
+    torch.save(torch.from_numpy(train_features), f'data/processed/train_features.pt')
+    torch.save(torch.from_numpy(val_features), f'data/processed/val_features.pt')
+    torch.save(torch.from_numpy(train_layers), f'data/processed/train_layers.pt')
+    torch.save(torch.from_numpy(val_layers), f'data/processed/val_layers.pt')
 
 if __name__ == "__main__":
-    resolution = 30
     dst_crs = "EPSG:6933"
-    preprocess_data(dst_crs, resolution)
-
-    '''
-    output_px = 1
-    input_px = 35
+    resolution = 30
     delta = 55
-    build_features(output_px, input_px, delta, resolution)
-    '''
+    window_multiple = 200
+    overlap = 2000
+    dataset = "train"
+
+    filter_px = 50
+
+    build_features(dst_crs, resolution, delta, window_multiple, overlap, dataset, filter_px)

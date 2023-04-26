@@ -32,3 +32,12 @@ conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvi
 conda install pytorch-lightning
 conda install tensorboard
 conda install rasterio
+
+# Dataset
+filter_px = 50
+
+percentage of loss dropped:  0.0400
+Deforestation percentage:  0.0075
+nr train points:  180212
+nr val points:  45053
+
