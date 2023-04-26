@@ -10,125 +10,246 @@ import matplotlib as mpl
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import os
 from rasterio.merge import merge
+import cv2
 
-# transform bio data
-def transform_crs(dst_crs, resolution):
 
-    input_paths = []
-    output_paths = []
-
-    # biomass data
-    for year in [2010,2015]:
-        input_paths.append(f"data/raw/biomass/amazonia/{resolution}m/" + f"mapbiomas-brazil-collection-70-amazonia-{year}.tif")
-        output_paths.append(f"data/processed/{resolution}m/landuse/" + f"landuse_{year}.tif")
-
-    for input_path, output_path in zip(input_paths, output_paths):
-        with rasterio.open(input_path) as src:
-            transform, width, height = calculate_default_transform(
-                src.crs, dst_crs, src.width, src.height, *src.bounds)
-            kwargs = src.meta.copy()
-            kwargs.update({
-                'crs': dst_crs,
-                'transform': transform,
-                'width': width,
-                'height': height
-            })
-            with rasterio.open(output_path, 'w', **kwargs, compress="DEFLATE") as dst:
-                for i in range(1, src.count + 1):
-                    reproject(
-                        source=rasterio.band(src, i),
-                        destination=rasterio.band(dst, i),
-                        src_transform=src.transform,
-                        src_crs=src.crs,
-                        dst_transform=transform,
-                        dst_crs=dst_crs,
-                        resampling=Resampling.nearest)
-                    
-# function to transform labels to 0=forest, 1=natural, 2=farming, 3=urban, 4=water, 255=unknown
+# function to transform labels to 1=forest, 2=natural, 3=farming, 4=urban, 5=water, 0=unknown
 def transform_landuse_to_labels(land_use):
-    class_dict = {1:0, 3:0, 4:0, 5:0,49:0, # forest
-                10:1,11:1,12:1,32:1,29:1,13:1, 13:1, 50:1, # natural
-                14:2,15:2,18:2,19:2,39:2,20:2,40:2,61:2,41:2,36:2,46:2,47:2,48:2,9:2,21:2, # farming
-                22:3,23:3,24:3,30:3,25:3, # urban
-                26:4,33:4,31:4, # water
-                27:255,0:255} # unobserved
+    class_dict = {1:1, 3:1, 4:1, 5:1,49:1, # forest
+                10:2,11:2,12:2,32:2,29:2, 13:2,50:2, # natural
+                14:3,15:3,18:3,19:3,39:3,20:3,40:3,61:3,41:3,36:3,46:3,47:3,48:3,9:3,21:3, # farming
+                22:4,23:4,24:4,30:4,25:4, # urban
+                26:5,33:5,31:5, # water
+                27:0,0:0} # unobserved
     land_use_new = np.zeros_like(land_use).astype(np.uint8)
     for key, value in class_dict.items():
         land_use_new[land_use == key] = value
     return land_use_new
 
-# function to load biomass data
-def load_biomass_data(year=None,resolution=30):
-    path_bio = f"../data/processed/{resolution}m/landuse/" + f"landuse_{year}.tif"
-    with rasterio.open(path_bio) as src:
-        out_meta = src.meta
-        land_use = src.read(1)
-    return land_use, out_meta
+# transform map biomass data
+def preprocess_file(year, dst_crs, resolution, data_type="landuse"):
+    if data_type == "deforestation":
+        input_path = f"data/raw/biomass/amazonia/{resolution}m/deforestation/"
+        input_paths = [input_path + name for name in os.listdir(input_path) if f"-{year}-" in name]
 
-# deforestation data
-def merge_mosaic(year=None, resolution=30, dst_crs="EPSG:6933"):
-    
-    path_bio = f"../data/raw/biomass/amazonia/{resolution}m/deforestation/" 
-    path_bios = [path_bio + name for name in os.listdir(path_bio) if f"-{year}-" in name]
-    
-    src_files_to_mosaic = []
-    for fp in path_bios:
-        src = rasterio.open(fp)
-        src_files_to_mosaic.append(src)
+        src_files_to_mosaic = []
+        for fp in input_paths:
+            src = rasterio.open(fp)
+            src_files_to_mosaic.append(src)
 
-    mosaic, out_trans = merge(src_files_to_mosaic)
-    mosaic = (mosaic/100).astype(np.uint8)
-    
-    out_meta = src.meta.copy()
-    
-    # Get bounds of the merged mosaic
-    out_height, out_width = mosaic.shape[1], mosaic.shape[2]
-    out_ulx, out_uly = out_trans * (0, 0)
-    out_lrx, out_lry = out_trans * (out_width, out_height)
-    bounds = (out_ulx, out_lry, out_lrx, out_uly)
+        data, src_transform = merge(src_files_to_mosaic)
+        data = (data / 100).astype(np.uint8)
 
-    out_meta.update({"driver": "GTiff", 
-                     "height": mosaic.shape[1],
-                     "width": mosaic.shape[2],
-                     "transform": out_trans
-                     })
-    
+        width = data.shape[2]
+        height = data.shape[1]
+        bounds = rasterio.transform.array_bounds(height, width, src_transform)
+
+    else:
+        file_suffix = "-pasture-quality" if data_type is "pasture" else ""
+        input_path = f"data/raw/biomass/amazonia/{resolution}m/{data_type}/" + f"mapbiomas-brazil-collection-70{file_suffix}-amazonia-{year}.tif"
+
+        src = rasterio.open(input_path)
+        data = src.read(1)
+
+        if data_type is "landuse":
+            data = transform_landuse_to_labels(data)
+
+        width = src.width
+        height = src.height
+        bounds = src.bounds
+        src_transform = src.transform
+
     transform, width, height = calculate_default_transform(
-            src.crs, dst_crs, out_meta['width'], out_meta['height'], *bounds)
-    
+        src.crs, dst_crs, width, height, *bounds, resolution=(resolution, resolution))
+
+    out_meta = src.meta.copy()
     out_meta.update({
-        "crs": dst_crs,
-        "transform": transform,
-        "width": width,
-        "height": height,
-        "dtype": "uint8",
-        "compress": "DEFLATE"
+        "driver": "GTiff",
+        'crs': dst_crs,
+        'transform': transform,
+        'width': width,
+        'height': height,
+        'dtype': "uint8",
+        'compress': "DEFLATE"
     })
-    
-    path_out = f"../data/processed/{30}m/deforestation/"  + f"deforestation_{year}.tif"
-    with rasterio.open(path_out, "w", **out_meta) as dest:
+
+    output_path = f"data/processed/{data_type}/" + f"{data_type}_{year}.tif"
+    with rasterio.open(output_path, 'w', **out_meta) as dst:
         reproject(
-            source=mosaic[0],
-            destination=rasterio.band(dest, 1),
-            src_transform=out_trans,
+            source=data,
+            destination=rasterio.band(dst, 1),
+            src_transform=src_transform,
             src_crs=src.crs,
             dst_transform=transform,
             dst_crs=dst_crs,
             resampling=Resampling.nearest)
 
-def preprocess_data():
-    # preprocess bio data
-    transform_crs("EPSG:6933", 30)
-    for year in [2010,2015]:
-        land_use, out_meta = load_biomass_data(year)
-        land_use = transform_landuse_to_labels(land_use)
-        out_meta.update({"dtype": "uint8", "compress": "DEFLATE"})
-        with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_{year}.tif", "w", **out_meta) as dest:
-            dest.write(np.expand_dims(land_use, axis=0))
+    # close all open src files
+    if data_type == "deforestation":
+        for src in src_files_to_mosaic:
+            src.close()
+    else:
+        src.close()
+
+
+# preprocess all data
+def preprocess_data(dst_crs="EPSG:6933", resolution=30):
+
+    # preprocess pasture and landuse data
+    for year in [2014]:
+        preprocess_file(year, dst_crs, resolution, "pasture")
+        preprocess_file(year, dst_crs, resolution, "landuse")
 
     # preprocess deforestation data
-    for year in range(1995, 2019):
-        merge_mosaic(year)
+    for year in range(1995, 2020):
+        preprocess_file(year, dst_crs, 30, "deforestation")
+
+
+# load window from raster
+def load_window(year, window_size=5100, offset=[0,0], data_type="landuse"):
+    path = f"../data/processed/{data_type}/" + f"{data_type}_{year}.tif"
+    with rasterio.open(path) as src:
+        fill_value = 0
+        window = rasterio.windows.Window(offset[0], offset[1], window_size, window_size)
+        data = src.read(window=window, fill_value=fill_value, boundless=True)
+        data = data.squeeze().astype(np.uint8)
+    return torch.from_numpy(data)
+
+def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
+    bio_data_src = rasterio.open("data/processed/deforestation/deforestation_2009.tif")
+    window = rasterio.windows.Window(offset[0], offset[1], window_size, window_size)
+    window_bounds = rasterio.windows.bounds(window, bio_data_src.transform)
+
+    # Identify the tiles that intersect with the spatial extent of the window
+    tiles_to_load = []
+    for path_fabdem in path_fabdem_tiles:
+        slope_data_src = rasterio.open(path_fabdem)
+        # calculate transformed bounds
+        tile_bounds = rasterio.warp.transform_bounds(slope_data_src.crs, bio_data_src.crs, *slope_data_src.bounds)
+        # check if tile_bounds has any overlap with window_bounds
+        if not rasterio.coords.disjoint_bounds(tile_bounds, window_bounds):
+            tiles_to_load.append(slope_data_src)
+        else:
+            slope_data_src.close()
+    slope_data, slope_data_transform = merge(tiles_to_load)
+
+    # Get bounds of the merged mosaic
+    width = slope_data.shape[2]
+    height = slope_data.shape[1]
+    bounds = rasterio.transform.array_bounds(height, width, slope_data_transform)
+
+    resolution = bio_data_src.transform[0]
+    transform, width, height = calculate_default_transform(
+        slope_data_src.crs, bio_data_src.crs, width, height, *bounds, resolution=(resolution, resolution))
+
+    slope_data_new = np.zeros((height, width), np.float32)
+    reproject(
+        source=slope_data[0],
+        destination=slope_data_new,
+        src_transform=slope_data_transform,
+        src_crs=slope_data_src.crs,
+        dst_transform=transform,
+        dst_crs=bio_data_src.crs,
+        resampling=Resampling.bilinear)
+
+    window_slope = rasterio.windows.from_bounds(*window_bounds, transform=transform)
+    window_slope = [int(round(window_slope.col_off)), int(round(window_slope.row_off)), int(round(window_slope.width)), int(round(window_slope.height))]
+    slope_data_new = slope_data_new[window_slope[1]:window_slope[1] + window_slope[3], window_slope[0]:window_slope[0] + window_slope[2]]
+    slope_data_new = np.pad(slope_data_new, ((0, window_size - slope_data_new.shape[0]),
+                                             (0, window_size - slope_data_new.shape[1])),
+                                            mode="constant", constant_values=0)
+    slope_data_new = slope_data_new.squeeze().astype(np.float16)
+    return torch.from_numpy(slope_data_new)
+
+
+# iterate trough raster loading features and target iteratively avoiding memory issues
+def iterate_trough_raster(delta=55, window_multiple=500, overlap=10000, dataset="train"):
+    past_horizons = [1, 5, 10]
+    future_horizon = 1
+
+    year = 2014 if dataset == "test" else 2009
+    window_size_small = delta * window_multiple
+    window_size_large = window_size_small + 2 * overlap
+
+    with rasterio.open(f"data/processed/deforestation/" + f"deforestation_{year}.tif") as src:
+        height = src.height
+        width = src.width
+
+    # get slope data paths
+    path_fabdem_tiles = []
+    for root, dirs, files in os.walk("data/raw/fabdem/"):
+        for file in files:
+            if file.endswith(".tif"):
+                path_fabdem_tiles.append(os.path.join(root, file))
+
+    data_points = []
+    for window_x in range(0, int(width / window_size_small) + 1):
+        for window_y in range(0, int(height / window_size_small) + 1):
+            print(f"Loading window {window_x}, {window_y}")
+
+            offset_large = [window_x * window_size_small - overlap, window_y * window_size_small - overlap]
+            offset_small = [window_x * window_size_small, window_y * window_size_small]
+
+            features = []
+
+            # get past deforestation distances
+            current_deforestation = load_window(year, window_size=window_size_large, offset=offset_large, data_type="deforestation")
+            deforestation_aggregated = current_deforestation == 4
+            for i in range(1, 11):
+                if i in past_horizons:
+                    deforestation_distance = cv2.distanceTransform(deforestation_aggregated is False, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                    features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(torch.float16))
+                    if i == past_horizons[-1]:
+                        break
+                data = load_window(year, window_size=window_size_large, offset=offset_large, data_type="deforestation") == 4
+                deforestation_aggregated = deforestation_aggregated | data
+
+            # load current landuse
+            landuse = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
+
+            # get urban distance
+            urban_distance = cv2.distanceTransform(landuse != 4, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE).astype(np.float16)
+            features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(torch.float16))
+
+            # get slope data
+            features.append(load_slope_data(path_fabdem_tiles, window_size=window_size_small, offset=offset_small))
+
+            # get class layers
+            features.append(landuse[overlap:-overlap, overlap:-overlap])
+            features.append(load_window(year, window_size=window_size_small, offset=offset_small, data_type="pasture"))
+            features.append(current_deforestation[overlap:-overlap, overlap:-overlap])
+            features.append(load_window(year+future_horizon, window_size=window_size_small, offset=offset_small, data_type="deforestation"))
+            features = torch.stack(features)
+
+            '''
+            features = features.unfold(1, delta, delta).unfold(2, delta, delta)
+            features = features.moveaxis(0, 2)
+
+            train_indices = train_data[(train_data[:,0] < (offset[0]+window_size)) 
+                                 & (train_data[:,1] < (offset[1]+window_size)) 
+                                 & (train_data[:,0] > (offset[0]))
+                                 & (train_data[:,1] > (offset[1]))]
+    
+            if len(train_indices) > 0:
+                train_indices = ((train_indices[:,:2] - torch.tensor(offset)) / delta).type(torch.int)
+                train_features.append(features[train_indices[:,1], train_indices[:,0], :, :, :])
+
+            val_indices = val_data[(val_data[:, 0] < (offset[0] + window_size))
+                                   & (val_data[:, 1] < (offset[1] + window_size))
+                                   & (val_data[:, 0] > (offset[0]))
+                                   & (val_data[:, 1] > (offset[1]))]
+
+            if len(val_indices) > 0:
+                val_indices = ((val_indices[:, :2] - torch.tensor(offset)) / delta).type(torch.int)
+                val_features.append(features[val_indices[:, 1], val_indices[:, 0], :, :, :])
+
+    # train_features = torch.cat(train_features, dim=0)
+    val_features = torch.cat(val_features, dim=0)
+
+    # torch.save(train_features, "../data/processed/30m/train_features.pt")
+    torch.save(val_features, "../data/processed/30m/val_features.pt")
+    '''
+
 
 def compute_raster(year, delta, input_px=35):
     path_target = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year+1}.tif"
@@ -211,34 +332,14 @@ def compute_raster(year, delta, input_px=35):
 
     return train_data, val_data
 
-def aggregate_deforestation(dataset, past_horizons=[1,5,10]):
-    year = 2014 if dataset == "test" else 2009
-    path = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year}.tif"
-    with rasterio.open(path) as src:
-        deforestation_aggregated = src.read(fill_value=0).squeeze() == 4
-
-    for i in range(1,11):
-        if i in past_horizons:
-            suffix = "_test" if dataset == "test" else ""
-            out_path = f"data/processed/{30}m/aggregated/"  + f"aggregated_{i}{suffix}.tif"
-            out_meta = src.meta.copy()
-            out_meta.update({"dtype": "uint8", "compress": "DEFLATE"}) # "nbits": 1
-            with rasterio.open(out_path, "w", **out_meta) as dest:
-                dest.write(np.expand_dims(deforestation_aggregated.astype(np.uint8), axis=0))
-            if i == past_horizons[-1]:
-                break
-
-        path = f"data/processed/{30}m/deforestation/"  + f"deforestation_{year - i}.tif"
-        with rasterio.open(path) as src:
-            data = src.read(fill_value=0).squeeze() == 4
-            deforestation_aggregated = deforestation_aggregated | data
 
 def build_features(output_px=1, input_px=35, delta=50, resolution=30):
 
     # preprocess_data()
 
-    train_data, val_data = compute_raster(2009, delta, input_px) # on next year
+    # train_data, val_data = compute_raster(2009, delta, input_px) # on next year
 
+    '''
     # get height and width of the image
     with rasterio.open(f"data/processed/{30}m/landuse/" + f"landuse_2010.tif") as src:
         height = src.height
@@ -252,11 +353,17 @@ def build_features(output_px=1, input_px=35, delta=50, resolution=30):
     # aggregate features
     # aggregate_deforestation("train")
     # aggregate_deforestation("test")
+    '''
     
 
 if __name__ == "__main__":
+    resolution = 30
+    dst_crs = "EPSG:6933"
+    preprocess_data(dst_crs, resolution)
+
+    '''
     output_px = 1
     input_px = 35
     delta = 55
-    resolution = 30
     build_features(output_px, input_px, delta, resolution)
+    '''
