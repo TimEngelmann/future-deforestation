@@ -9,7 +9,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
-    val_dataset = DeforestationDataset("val", max_elements=max_elements)
+    mean  = torch.tensor([4.3101, 3.4019, 3.2393, 6.7158, 4.7855]) # precomputed
+    std = torch.tensor([0.9210, 0.5348, 0.5516, 0.9364, 0.9808]) # precomputed
+    val_dataset = DeforestationDataset("val", max_elements=max_elements, mean=mean, std=std)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     # test_dataset = DeforestationDataset("test", max_elements=max_elements)
@@ -38,7 +40,7 @@ def predict_model(model_nr):
     # valid_metrics = trainer.validate(model, dataloaders=val_loader, verbose=False)
 
     val_predictions = torch.load(path + "val_predictions.pt")
-    val_targets = torch.load("data/processed/30m/val_features.pt")[:,-1, 27, 27] == 4
+    val_targets = torch.load("data/processed/val_layers.pt")[:,-1, 27, 27] == 4
 
     # plot distribution normalized
     plt.hist(val_targets.float(), bins=20, alpha=0.5, color='lightgrey')
@@ -123,5 +125,5 @@ def predict_model(model_nr):
     '''
 
 if __name__ == "__main__":
-    model_nr = 12
+    model_nr = 15
     predict_model(model_nr)
