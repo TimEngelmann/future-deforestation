@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --cpus-per-task=5
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=40G
 #SBATCH --gpus=1
 #SBATCH --gres=gpumem:8G
 #SBATCH --time=8:00:00

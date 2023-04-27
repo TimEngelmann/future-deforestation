@@ -6,19 +6,9 @@ from rasterio.windows import Window
 import numpy as np
 import sys
 
-def load_entire(year, data_type="landuse", dataset="train"):
-    suffix = "_test" if dataset == "test" else ""
-    path = f"data/processed/{30}m/{data_type}/"  + f"{data_type}_{year}{suffix}.tif"
-    # Open the mosaic file
-    with rasterio.open(path) as src:
-        fill_value = 255 if data_type == "landuse" else 0
-        data = src.read(fill_value=fill_value)
-        data = data.squeeze()
-        data = data.astype(bool) if data_type == "aggregated" else data.astype(np.uint8)
-    return torch.from_numpy(data)
-
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, resolution=30, input_px=35, output_px=1, max_elements=None, root_path=""):
+    def __init__(self, dataset, resolution=30, input_px=35, output_px=1, max_elements=None, root_path="",
+                 mean=None, std=None, weighted_sampler=""):
         """
         Args:
             dataset: "train", "val", "test"
@@ -30,16 +20,34 @@ class DeforestationDataset(Dataset):
         self.resolution = resolution
         self.input_px = input_px
         self.root_path = root_path
+        self.mean = mean
+        self.std = std
 
-        self.data = torch.load(root_path + f"data/processed/{30}m/{dataset}_features.pt")
+        self.data = torch.load(root_path + f"data/processed/{dataset}_layers.pt")
         if max_elements is not None:
             self.data = self.data[:max_elements]
-        
+
         # helpers
-        self.i = torch.tensor(int(input_px/2))
+        self.i = torch.tensor(int(input_px / 2))
         self.delta = self.data.shape[-1]
-        self.mid = int(self.delta/2)
-        self.augmentation = int((self.delta-input_px)/2)
+        self.mid = int(self.delta / 2)
+        self.augmentation = int((self.delta - input_px) / 2)
+
+        if weighted_sampler != "":
+            weights = self.data[:, 1, self.mid, self.mid].clone()
+            if weighted_sampler == "linear":
+                self.weights = 1 - weights / weights.max() + 1
+            if weighted_sampler == "exponential":
+                self.weights = torch.exp(-2.5/weights.max() * weights)
+
+        self.data[:,:5] = torch.log(self.data[:,:5] + 10)
+
+        if mean is None or std is None:
+            self.mean = self.data[:,:5].mean(axis=(0,2,3))
+            self.std = self.data[:,:5].std(axis=(0,2,3))
+
+        for i in range(5):
+            self.data[:,i] = (self.data[:,i] - self.mean[i]) / self.std[i]
         
     def __len__(self):
         return self.data.shape[0]
@@ -59,8 +67,8 @@ class DeforestationDataset(Dataset):
 
             # select random point from target points
             target_point = target_points[torch.randint(0, target_points.shape[0],(1,)).item()]
-            x = target_point[0]
-            y = target_point[1]
+            x = int(target_point[0])
+            y = int(target_point[1])
         
         features = self.data[idx, :-1, x-self.i:x+self.i+1, y-self.i:y+self.i+1]
         target = self.data[idx, -1, x, y].item()
