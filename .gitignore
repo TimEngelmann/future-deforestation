@@ -7,5 +7,5 @@
 *.pyc
 /reports
 *.out
-
-/.idea/
+/.idea
+/.ipynb_checkpoints

@@ -1,78 +1,86 @@
 import torch
 import torchvision
 from torch.utils.data import Dataset
+import rasterio
+from rasterio.windows import Window
+import numpy as np
+import sys
 
 class DeforestationDataset(Dataset):
-    def __init__(self, dataset, resolution=250, input_px=400, output_px=40, max_elements=None):
+    def __init__(self, dataset, resolution=30, input_px=35, output_px=1, max_elements=None, root_path="",
+                 mean=None, std=None, weighted_sampler=""):
         """
         Args:
             dataset: "train", "val", "test"
         """
         self.dataset = dataset
-        self.year = 2015 if dataset == "test" else 2010
+        self.year = 2014 if dataset == "test" else 2009
         self.past_horizons = [1,5,10]
-        self.future_horizon = 5
+        self.future_horizon = 1
         self.resolution = resolution
         self.input_px = input_px
-        self.output_px = output_px
-        
-        data = torch.load(f'data/processed_transition/{dataset}_data.pt')
-        self.data = data
+        self.root_path = root_path
+        self.mean = mean
+        self.std = std
+
+        self.data = torch.load(root_path + f"data/processed/{dataset}_layers.pt")
         if max_elements is not None:
-            if len(data) >= max_elements:
-                self.data = data[:max_elements]
-
-        feature_data = []
-        bio_data = torch.load(f"data/processed_transition/biomass/amazonia/{self.resolution}m/biomass_{self.year}.pt")
-        feature_data.append(bio_data)
-    
-        for past_horizon in self.past_horizons:
-            transition_data = torch.load(f"data/processed_transition/biomass/amazonia/{resolution}m/transition_{self.year - past_horizon}_{self.year}.pt")
-            feature_data.append(transition_data)
-        self.feature_data = torch.stack(feature_data)
-
-        target_data = torch.load(f"data/processed_transition/biomass/amazonia/{resolution}m/transition_{self.year}_{self.year+self.future_horizon}.pt")
-        self.target_data = target_data
-
-        targets_bin = self.data[:,-1]
-        bin_count = torch.bincount(targets_bin)
-        bin_weights = 1 / (bin_count/torch.sum(bin_count))
-        sample_weights = [bin_weights[t] for t in targets_bin]
-        self.weights = torch.tensor(sample_weights)
+            self.data = self.data[:max_elements]
 
         # helpers
-        self.i = torch.tensor(int(input_px/2))
-        self.o = torch.tensor(int(output_px/2))
-        self.width = target_data.shape[1]
-        self.height = target_data.shape[0]
+        self.i = torch.tensor(int(input_px / 2))
+        self.delta = self.data.shape[-1]
+        self.mid = int(self.delta / 2)
+        self.augmentation = int((self.delta - input_px) / 2)
+
+        if weighted_sampler != "":
+            weights = self.data[:, 1, self.mid, self.mid].clone()
+            if weighted_sampler == "linear":
+                self.weights = 1 - weights / weights.max() + 1
+            if weighted_sampler == "exponential":
+                self.weights = torch.exp(-2.5/weights.max() * weights)
+
+        self.data[:,:5] = torch.log(self.data[:,:5] + 10)
+
+        if mean is None or std is None:
+            self.mean = self.data[:,:5].mean(axis=(0,2,3))
+            self.std = self.data[:,:5].std(axis=(0,2,3))
+
+        for i in range(5):
+            self.data[:,i] = (self.data[:,i] - self.mean[i]) / self.std[i]
         
     def __len__(self):
         return self.data.shape[0]
 
     def __getitem__(self, idx):
 
-        x = self.data[idx, 0]
-        y = self.data[idx, 1]
+        x = self.mid
+        y = self.mid
 
         if self.dataset == "train":
-            x = x + torch.randint(-self.o,self.o,(1,)).item()
-            y = y + torch.randint(-self.o,self.o,(1,)).item()
-            x = torch.maximum(x,self.i)
-            x = torch.minimum(x,self.width - self.i)
-            y = torch.maximum(y,self.i)
-            y = torch.minimum(y,self.height - self.i)
+            xi = np.arange(x-self.augmentation, x+self.augmentation+1)
+            xvi, yvi = np.meshgrid(xi, xi)
+            current = self.data[idx, -2, y-self.augmentation:y+self.augmentation+1, x-self.augmentation:x+self.augmentation+1]
+            targets = self.data[idx, -1, y-self.augmentation:y+self.augmentation+1, x-self.augmentation:x+self.augmentation+1]
+            target_points = np.vstack((xvi.flatten(), yvi.flatten(), targets.flatten(), current.flatten())).T
+            target_points = target_points[((target_points[:,3] == 2) & (target_points[:,2] == 2) | (target_points[:,2] == 4))]
 
-        features = self.feature_data[:, y-self.i:y+self.i, x-self.i:x+self.i]
+            # select random point from target points
+            target_point = target_points[torch.randint(0, target_points.shape[0],(1,)).item()]
+            x = int(target_point[0])
+            y = int(target_point[1])
+        
+        features = self.data[idx, :-1, x-self.i:x+self.i+1, y-self.i:y+self.i+1]
+        target = self.data[idx, -1, x, y].item()
+        target = 1 if target == 4 else 0
         
         if self.dataset == "train":
             angles = [0,90,180,270]
             angle_idx = torch.randint(0, len(angles),(1,)).item()
             features = torchvision.transforms.functional.rotate(features, angles[angle_idx])
 
-        target = torch.sum(self.target_data[y-self.o:y+self.o, x-self.o:x+self.o])/(self.output_px**2)
-
-        return features.float(), target.float()
+        return features.float(), torch.tensor(target).float()
     
 if __name__ == "__main__":
     train_dataset = DeforestationDataset("train")
-    features, target = train_dataset[0]
+    features, target = train_dataset[20]
