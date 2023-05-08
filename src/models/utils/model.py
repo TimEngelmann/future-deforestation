@@ -118,7 +118,7 @@ class ForestModel(pl.LightningModule):
     def predict_step(self, batch, batch_idx):
         output = self.forward(batch[0])
         output = torch.sigmoid(output)
-        return output
+        return {"preds": output, "target": batch[1], "idx": batch[2]}
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

@@ -8,21 +8,22 @@ from sklearn.metrics import roc_curve, precision_recall_curve, f1_score
 import numpy as np
 import matplotlib.pyplot as plt
 
-def get_data_loaders(batch_size=64, num_workers=5, max_elements=None):
+def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, do_augmentation=False):
     mean  = torch.tensor([4.3101, 3.4019, 3.2393, 6.7158, 4.7855]) # precomputed
     std = torch.tensor([0.9210, 0.5348, 0.5516, 0.9364, 0.9808]) # precomputed
-    val_dataset = DeforestationDataset("val", max_elements=max_elements, mean=mean, std=std)
+    val_dataset = DeforestationDataset("val", max_elements=max_elements, mean=mean, std=std, do_augmentation=do_augmentation)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     # test_dataset = DeforestationDataset("test", max_elements=max_elements)
     # test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    return val_loader, None
+    return val_loader, val_dataset
 
-def predict_model(model_nr):
+def predict_model(model_nr, do_augmentation=False):
     path = f"lightning_logs/version_{model_nr}/"
 
-    val_loader, test_loader = get_data_loaders(max_elements=None)
+    max_elements = 10000 if do_augmentation else None
+    val_loader, val_dataset = get_data_loaders(max_elements=max_elements, do_augmentation=do_augmentation)
     
     model_names = [name for name in os.listdir(path+"checkpoints/") if ".ckpt" in name]
     model_path = path+"checkpoints/"+model_names[-1]
@@ -34,13 +35,24 @@ def predict_model(model_nr):
         logger=False
     )
 
-    val_predictions =  trainer.predict(model, val_loader)
-    val_predictions = torch.cat(val_predictions)
-    torch.save(val_predictions, path + "val_predictions.pt")
-    # valid_metrics = trainer.validate(model, dataloaders=val_loader, verbose=False)
+    val_predictions = trainer.predict(model, val_loader)
 
-    val_predictions = torch.load(path + "val_predictions.pt")
-    val_targets = torch.load("data/processed/val_layers.pt")[:,-1, 27, 27] == 4
+    # concatenate predictions indicated by "preds" key
+    predictions = torch.cat([pred["preds"] for pred in val_predictions])
+    suffix = "_augmented" if do_augmentation else ""
+    torch.save(predictions, path + f"val_predictions{suffix}.pt")
+
+    # concatenate targets indicated by "target" key
+    targets = torch.cat([pred["target"] for pred in val_predictions])
+    torch.save(targets, path + f"val_targets{suffix}.pt")
+
+    # concatenate idx indicated by "idx" key
+    idx = torch.cat([pred["idx"] for pred in val_predictions])
+    torch.save(idx, path + f"val_idx{suffix}.pt")
+
+    val_predictions = torch.load(path + f"val_predictions{suffix}.pt")
+    val_targets = torch.load(path + f"val_targets{suffix}.pt")
+    val_idx = torch.load(path + f"val_idx{suffix}.pt")
 
     # plot distribution normalized
     plt.hist(val_targets.float(), bins=20, alpha=0.5, color='lightgrey')
@@ -82,24 +94,19 @@ def predict_model(model_nr):
     plt.savefig(path + "val_precision_recall_curve.png")
     plt.close()
 
-    thresholds = np.arange(0.0, 1.0, 0.001)
-    fscore = np.zeros(shape=(len(thresholds)))
+    precision = precision[:-10]
+    recall = recall[:-10]
+    thresholds = thresholds[:-10]
 
-    # Fit the model
-    for index, elem in enumerate(thresholds):
-        # Corrected probabilities
-        val_predictions_class = val_predictions > elem
-        # Calculate the f-score
-        fscore[index] = f1_score(val_targets, val_predictions_class)
+    plt.plot(thresholds, precision[:-1], label="precision")
+    plt.plot(thresholds, recall[:-1], label="recall")
+    f1 = 2 * precision[:-1] * recall[:-1] / (precision[:-1] + recall[:-1])
+    plt.plot(thresholds, f1, label="f1")
+    plt.legend()
+    plt.savefig(path + "val_precision_recall_threshold.png")
+    plt.close()
 
-    plt.figure()
-    plt.plot(thresholds,fscore)
-    plt.axis("square")
-    plt.xlabel("Threshold")
-    plt.ylabel("F1-Score")
-    plt.savefig(path + "val_f1_score.png")
-
-    thresholdOpt = thresholds[np.argmax(fscore)]
+    thresholdOpt = float(thresholds[f1.argmax()])
     print("Chosen threshold: ", thresholdOpt)
     precision = Precision(task="binary", threshold=thresholdOpt)
     recall = Recall(task="binary", threshold=thresholdOpt)
@@ -125,5 +132,6 @@ def predict_model(model_nr):
     '''
 
 if __name__ == "__main__":
-    model_nr = 15
-    predict_model(model_nr)
+    model_nr = 13
+    do_augmentation = True
+    predict_model(model_nr, do_augmentation)
