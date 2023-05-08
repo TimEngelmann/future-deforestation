@@ -6,7 +6,7 @@ from torchvision.models import resnet18
 
 class ForestModel(pl.LightningModule):
 
-    def __init__(self, input_width, lr, loss_fn, architecture, dropout=0, weight_decay=0):
+    def __init__(self, input_width, lr, loss_fn_weight, architecture, dropout=0, weight_decay=0, task="pixel"):
         super().__init__()
         self.save_hyperparameters()
 
@@ -17,15 +17,18 @@ class ForestModel(pl.LightningModule):
             self.model.conv1 = torch.nn.Conv2d(8, 64, kernel_size=3, stride=1, padding=1, bias=False)
         else:
             self.model = compile_original_2D_CNN(input_width=input_width, dropout=dropout)
-        
-        if loss_fn == "BCEWithLogitsLoss":
-            self.loss_fn = torch.nn.BCEWithLogitsLoss()
-        else:
-            self.loss_fn = torch.nn.MSELoss()
 
-        self.f1_metric = F1Score(task="binary")
-        self.precision_metric = Precision(task="binary")
-        self.recall_metric = Recall(task="binary")
+        self.task = task
+        if self.task == "tile_regression":
+            self.loss_fn = torch.nn.MSELoss()
+            self.mse_metric = MeanSquaredError()
+            self.rmse_metric = MeanSquaredError(squared=False)
+        else:
+            loss_fn_weight = None if loss_fn_weight == 0 else torch.tensor([loss_fn_weight])
+            self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=loss_fn_weight)
+            self.f1_metric = F1Score(task="binary")
+            self.precision_metric = Precision(task="binary")
+            self.recall_metric = Recall(task="binary")
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -50,17 +53,18 @@ class ForestModel(pl.LightningModule):
         target = batch[1]
         
         output = self.forward(features)
-        if self.loss_fn._get_name() != 'BCEWithLogitsLoss':
-            output = torch.sigmoid(output)
-        
         loss = self.loss_fn(output, target)
 
         metrics_batch = {"loss": loss}
 
-        output = torch.sigmoid(output)
-        metrics_batch["f1"] = self.f1_metric(output, target)
-        metrics_batch["precision"] = self.precision_metric(output, target)
-        metrics_batch["recall"] = self.recall_metric(output, target)
+        if self.task == "tile_regression":
+            metrics_batch["mse"] = self.mse_metric(output, target)
+            metrics_batch["rmse"] = self.rmse_metric(output, target)
+        else:
+            output = torch.sigmoid(output)
+            metrics_batch["f1"] = self.f1_metric(output, target)
+            metrics_batch["precision"] = self.precision_metric(output, target)
+            metrics_batch["recall"] = self.recall_metric(output, target)
 
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)

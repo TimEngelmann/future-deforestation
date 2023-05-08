@@ -9,9 +9,9 @@
     "input_px": 50,
     "weighted_sampler": "",
 
-    "task": "tile_regression",
-    "rebalanced_train": false,
-    "rebalanced_val": false,
-    "loss_fn_weight": 0
+    "task": "pixel",
+    "rebalanced_train": true,
+    "rebalanced_val": true,
+    "loss_fn_weight": 2
 }
 

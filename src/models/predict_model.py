@@ -8,22 +8,18 @@ from sklearn.metrics import roc_curve, precision_recall_curve, f1_score
 import numpy as np
 import matplotlib.pyplot as plt
 
-def get_data_loaders(batch_size=64, num_workers=5, max_elements=None, do_augmentation=False):
+def get_data_loaders(batch_size=64, num_workers=5):
     mean  = torch.tensor([4.3101, 3.4019, 3.2393, 6.7158, 4.7855]) # precomputed
     std = torch.tensor([0.9210, 0.5348, 0.5516, 0.9364, 0.9808]) # precomputed
-    val_dataset = DeforestationDataset("val", max_elements=max_elements, mean=mean, std=std, do_augmentation=do_augmentation)
+    val_dataset = DeforestationDataset("val", mean=mean, std=std, input_px=50)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-
-    # test_dataset = DeforestationDataset("test", max_elements=max_elements)
-    # test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return val_loader, val_dataset
 
-def predict_model(model_nr, do_augmentation=False):
+def predict_model(model_nr):
     path = f"lightning_logs/version_{model_nr}/"
 
-    max_elements = 10000 if do_augmentation else None
-    val_loader, val_dataset = get_data_loaders(max_elements=max_elements, do_augmentation=do_augmentation)
+    val_loader, val_dataset = get_data_loaders()
     
     model_names = [name for name in os.listdir(path+"checkpoints/") if ".ckpt" in name]
     model_path = path+"checkpoints/"+model_names[-1]
@@ -39,20 +35,14 @@ def predict_model(model_nr, do_augmentation=False):
 
     # concatenate predictions indicated by "preds" key
     predictions = torch.cat([pred["preds"] for pred in val_predictions])
-    suffix = "_augmented" if do_augmentation else ""
-    torch.save(predictions, path + f"val_predictions{suffix}.pt")
+    torch.save(predictions, path + f"val_predictions.pt")
 
     # concatenate targets indicated by "target" key
     targets = torch.cat([pred["target"] for pred in val_predictions])
-    torch.save(targets, path + f"val_targets{suffix}.pt")
+    torch.save(targets, path + f"val_targets.pt")
 
-    # concatenate idx indicated by "idx" key
-    idx = torch.cat([pred["idx"] for pred in val_predictions])
-    torch.save(idx, path + f"val_idx{suffix}.pt")
-
-    val_predictions = torch.load(path + f"val_predictions{suffix}.pt")
-    val_targets = torch.load(path + f"val_targets{suffix}.pt")
-    val_idx = torch.load(path + f"val_idx{suffix}.pt")
+    val_predictions = torch.load(path + f"val_predictions.pt")
+    val_targets = torch.load(path + f"val_targets.pt")
 
     # plot distribution normalized
     plt.hist(val_targets.float(), bins=20, alpha=0.5, color='lightgrey')
@@ -122,16 +112,6 @@ def predict_model(model_nr, do_augmentation=False):
     print("----- Validation Metrics -----")
     print(valid_metrics)
 
-    '''
-    test_predictions =  trainer.predict(model, test_loader)
-    test_predictions = torch.cat(test_predictions)
-    torch.save(test_predictions, path + "test_predictions.pt")
-    test_metrics = trainer.test(model, dataloaders=test_loader, verbose=False)
-    print("----- Testing Metrics -----")
-    print(test_metrics)
-    '''
-
 if __name__ == "__main__":
-    model_nr = 13
-    do_augmentation = True
-    predict_model(model_nr, do_augmentation)
+    model_nr = 23
+    predict_model(model_nr)

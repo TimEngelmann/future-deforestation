@@ -10,17 +10,12 @@ import torchvision
 
 
 def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path="",
-                     weighted_sampler="linear", input_px=50):
+                     weighted_sampler="linear", input_px=50, task="pixel",
+                     rebalanced_train=False, rebalanced_val=False):
 
-    train_transforms = torchvision.transforms.Compose([
-        torchvision.transforms.RandomHorizontalFlip(),
-        torchvision.transforms.RandomVerticalFlip(),
-        torchvision.transforms.RandomCrop(input_px)
-    ])
-
-    train_dataset = DeforestationDataset("train", max_elements=max_elements,
-                                         root_path=root_path, weighted_sampler=weighted_sampler,
-                                         transform=train_transforms)
+    train_dataset = DeforestationDataset("train", max_elements=max_elements, root_path=root_path,
+                                         weighted_sampler=weighted_sampler, input_px=input_px, task=task,
+                                         rebalanced=rebalanced_train)
 
     if weighted_sampler != "":
         sampler = torch.utils.data.WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset))
@@ -30,8 +25,8 @@ def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path=
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
     val_dataset = DeforestationDataset("val", max_elements=max_elements, root_path=root_path,
-                                       mean=train_dataset.mean, std=train_dataset.std,
-                                       transform=None, input_px=input_px)
+                                       mean=train_dataset.mean, std=train_dataset.std, input_px=input_px, task=task,
+                                       rebalanced=rebalanced_val)
 
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
@@ -40,7 +35,7 @@ def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path=
 
 def train_model(init_nr=None, 
                 max_epochs=30, lr=0.0001,
-                loss_fn="BCEWithLogitsLoss",
+                loss_fn_weight=0,
                 architecture="VGG",
                 input_px=50,
                 accelerator='mps',
@@ -48,14 +43,18 @@ def train_model(init_nr=None,
                 num_workers=8,
                 dropout=0.0,
                 weight_decay=0.0,
-                weighted_sampler=""):
+                weighted_sampler="",
+                task="pixel",
+                rebalanced_train=False,
+                rebalanced_val=False):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(batch_size=64, num_workers=num_workers,
                                                 root_path=root_path, weighted_sampler=weighted_sampler,
-                                                input_px=input_px)
+                                                input_px=input_px, task=task,
+                                                rebalanced_train=rebalanced_train, rebalanced_val=rebalanced_val)
     
-    model = ForestModel(input_px, lr, loss_fn, architecture, dropout, weight_decay)
+    model = ForestModel(input_px, lr, loss_fn_weight, architecture, dropout, weight_decay, task=task)
     if init_nr >= 0:
         init_path = f"lightning_logs/version_{init_nr}/checkpoints/"
         checkpoints = [checkpoint for checkpoint in os.listdir(init_path) if ".ckpt" in checkpoint]
@@ -85,13 +84,14 @@ if __name__ == "__main__":
     train_model(init_nr=hyp['init_nr'], 
                 accelerator=hyp['accelerator'], 
                 max_epochs=hyp['max_epochs'], 
-                lr=hyp['lr'], 
-                loss_fn=hyp['loss_fn'],
+                lr=hyp['lr'],
                 architecture=hyp['architecture'],
                 root_path=hyp['root_path'],
                 num_workers=hyp['num_workers'],
-                dropout=hyp['dropout'],
-                weight_decay=hyp['weight_decay'],
                 weighted_sampler=hyp['weighted_sampler'],
-                input_px=hyp['input_px'])
+                input_px=hyp['input_px'],
+                task=hyp['task'],
+                rebalanced_train=hyp['rebalanced_train'],
+                rebalanced_val=hyp['rebalanced_val'],
+                loss_fn_weight=hyp['loss_fn_weight'])
 
