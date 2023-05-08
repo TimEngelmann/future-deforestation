@@ -2,6 +2,7 @@ import torch
 import pytorch_lightning as pl
 from .cnn2d import compile_original_2D_CNN,compile_VGG_CNN
 from torchmetrics import MeanSquaredError, F1Score, Precision, Recall, AUROC
+from torchvision.models import resnet18
 
 class ForestModel(pl.LightningModule):
 
@@ -11,6 +12,9 @@ class ForestModel(pl.LightningModule):
 
         if architecture == "VGG":
             self.model = compile_VGG_CNN(input_width=input_width)
+        elif architecture == "RESNET":
+            self.model = resnet18(num_classes=1)
+            self.model.conv1 = torch.nn.Conv2d(8, 64, kernel_size=3, stride=1, padding=1, bias=False)
         else:
             self.model = compile_original_2D_CNN(input_width=input_width, dropout=dropout)
         
@@ -19,14 +23,9 @@ class ForestModel(pl.LightningModule):
         else:
             self.loss_fn = torch.nn.MSELoss()
 
-        '''
-        self.mse_metric = MeanSquaredError()
-        self.rmse_metric = MeanSquaredError(squared=False)
         self.f1_metric = F1Score(task="binary")
         self.precision_metric = Precision(task="binary")
         self.recall_metric = Recall(task="binary")
-        self.auroc_metric = AUROC(task="binary")
-        '''
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -56,19 +55,12 @@ class ForestModel(pl.LightningModule):
         
         loss = self.loss_fn(output, target)
 
-        metrics_batch = {}
-        metrics_batch["loss"] = loss
+        metrics_batch = {"loss": loss}
 
         output = torch.sigmoid(output)
-
-        '''
-        metrics_batch["mse"] = self.mse_metric(output, target)
-        metrics_batch["rmse"] = self.rmse_metric(output, target)
         metrics_batch["f1"] = self.f1_metric(output, target)
         metrics_batch["precision"] = self.precision_metric(output, target)
         metrics_batch["recall"] = self.recall_metric(output, target)
-        metrics_batch["auroc"] = self.auroc_metric(output, target)
-        '''
 
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)
@@ -115,10 +107,13 @@ class ForestModel(pl.LightningModule):
         self.test_step_outputs.clear()
         return result
     
-    def predict_step(self, batch, batch_idx):
-        output = self.forward(batch[0])
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        features = batch[0]
+        target = batch[1]
+
+        output = self.forward(features)
         output = torch.sigmoid(output)
-        return {"preds": output, "target": batch[1], "idx": batch[2]}
+        return {"preds": output, "target": target}
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
