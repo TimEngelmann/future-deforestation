@@ -10,7 +10,7 @@ from matplotlib import colors
 
 class DeforestationDataset(Dataset):
     def __init__(self, dataset, resolution=30, input_px=35, output_px=1, max_elements=None, root_path="",
-                 mean=None, std=None, weighted_sampler="", do_augmentation=False):
+                 mean=None, std=None, weighted_sampler="", do_augmentation=False, do_rotation=False):
         """
         Args:
             dataset: "train", "val", "test"
@@ -25,6 +25,7 @@ class DeforestationDataset(Dataset):
         self.mean = mean
         self.std = std
         self.do_augmentation = do_augmentation
+        self.do_rotation = do_rotation
 
         self.data = torch.load(root_path + f"data/processed/{dataset}_layers.pt")
         if max_elements is not None:
@@ -91,11 +92,11 @@ class DeforestationDataset(Dataset):
             y = self.valid_indices[idx][2].item() + self.mid - self.augmentation
             idx = self.valid_indices[idx][0].item()
 
-        features = self.data[idx, :-1, x-self.i:x+self.i+1, y-self.i:y+self.i+1]
-        target = self.data[idx, -1, x, y].item()
-        target = 1 if target == 4 else 0
+        features = self.data[idx, :-1, :, :]
+        target = np.count_nonzero(self.data[idx, -1, :, :] == 4)
+        target = 1 if target > 0 else 0
 
-        if self.dataset == "train" and self.do_augmentation:
+        if self.dataset == "train" and self.do_rotation:
             angles = [0,90,180,270]
             angle_idx = torch.randint(0, len(angles),(1,)).item()
             features = torchvision.transforms.functional.rotate(features, angles[angle_idx])
@@ -103,5 +104,5 @@ class DeforestationDataset(Dataset):
         return features.float(), torch.tensor(target).float(), torch.tensor(idx).float()
     
 if __name__ == "__main__":
-    train_dataset = DeforestationDataset("val", do_augmentation=True)
-    features, target, idx = train_dataset[34227]
+    train_dataset = DeforestationDataset("val", do_augmentation=False, do_rotation=False)
+    features, target, idx = train_dataset[0]
