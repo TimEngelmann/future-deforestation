@@ -6,7 +6,8 @@ from torchvision.models import resnet18
 
 class ForestModel(pl.LightningModule):
 
-    def __init__(self, input_width, lr, loss_fn_weight, architecture, dropout=0, weight_decay=0, task="pixel"):
+    def __init__(self, input_width, lr, loss_fn_weight, architecture, dropout=0, weight_decay=0, task="pixel",
+                 alpha=0, gamma=0):
         super().__init__()
         self.save_hyperparameters()
 
@@ -36,6 +37,8 @@ class ForestModel(pl.LightningModule):
 
         self.lr = lr
         self.weight_decay = weight_decay
+        self.alpha = alpha
+        self.gamma = gamma
 
     def forward(self, features):
         output = self.model(features)
@@ -54,6 +57,12 @@ class ForestModel(pl.LightningModule):
         
         output = self.forward(features)
         loss = self.loss_fn(output, target)
+        print(loss)
+
+        if self.alpha != 0 and self.gamma != 0:
+            loss_exp = torch.exp(-loss)
+            loss = self.alpha * (1 - loss_exp) ** self.gamma * loss
+            print(loss)
 
         metrics_batch = {"loss": loss}
 

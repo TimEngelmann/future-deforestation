@@ -49,7 +49,7 @@ def compile_original_2D_CNN(input_width=35, dropout=0):
     return model
 
 def compile_VGG_CNN(input_width=400):
-    input_dim=4
+    input_dim=8
     hidden_dim=[64, 128, 256, 512, 512]
     kernel_size=[(3, 3), (3, 3), (3, 3), (3, 3), (3, 3), (3, 3)]
     stride=[(1, 1), (1, 1), (1, 1), (1, 1), (1, 1), (1, 1)]
@@ -58,7 +58,7 @@ def compile_VGG_CNN(input_width=400):
     maxpool_dim = 10
     dropout=0.0
     output_dim=1
-    input_width=35
+    input_width=input_width
 
     layers = []
 

@@ -46,7 +46,9 @@ def train_model(init_nr=None,
                 weighted_sampler="",
                 task="pixel",
                 rebalanced_train=False,
-                rebalanced_val=False):
+                rebalanced_val=False,
+                alpha=None,
+                gamma=None):
     pl.seed_everything(42, workers=True)
 
     train_loader, val_loader = get_data_loaders(batch_size=64, num_workers=num_workers,
@@ -54,7 +56,8 @@ def train_model(init_nr=None,
                                                 input_px=input_px, task=task,
                                                 rebalanced_train=rebalanced_train, rebalanced_val=rebalanced_val)
     
-    model = ForestModel(input_px, lr, loss_fn_weight, architecture, dropout, weight_decay, task=task)
+    model = ForestModel(input_px, lr, loss_fn_weight, architecture, dropout, weight_decay,
+                        task=task, alpha=alpha, gamma=gamma)
     if init_nr >= 0:
         init_path = f"lightning_logs/version_{init_nr}/checkpoints/"
         checkpoints = [checkpoint for checkpoint in os.listdir(init_path) if ".ckpt" in checkpoint]
@@ -77,8 +80,8 @@ def train_model(init_nr=None,
     )
 
 if __name__ == "__main__":
-    config_file = sys.argv[1]
-    # config_file = "config"
+    # config_file = sys.argv[1]
+    config_file = "config"
     with open(f"configs/{config_file}.json", "r") as cfg:
         hyp = json.load(cfg)
     train_model(init_nr=hyp['init_nr'], 
@@ -93,5 +96,8 @@ if __name__ == "__main__":
                 task=hyp['task'],
                 rebalanced_train=hyp['rebalanced_train'],
                 rebalanced_val=hyp['rebalanced_val'],
-                loss_fn_weight=hyp['loss_fn_weight'])
+                loss_fn_weight=hyp['loss_fn_weight'],
+                dropout=hyp['dropout'],
+                alpha=hyp['alpha'],
+                gamma=hyp['gamma'])
 

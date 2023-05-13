@@ -8,18 +8,21 @@ from sklearn.metrics import roc_curve, precision_recall_curve, f1_score
 import numpy as np
 import matplotlib.pyplot as plt
 
-def get_data_loaders(batch_size=64, num_workers=5):
+
+def get_data_loaders(batch_size=64, num_workers=5, task="pixel", rebalanced_val=False, input_px=50):
     mean  = torch.tensor([4.3101, 3.4019, 3.2393, 6.7158, 4.7855]) # precomputed
     std = torch.tensor([0.9210, 0.5348, 0.5516, 0.9364, 0.9808]) # precomputed
-    val_dataset = DeforestationDataset("val", mean=mean, std=std, input_px=50)
+    val_dataset = DeforestationDataset("val", mean=mean, std=std, input_px=input_px,
+                                       task=task, rebalanced=rebalanced_val)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return val_loader, val_dataset
 
-def predict_model(model_nr):
+
+def predict_model(model_nr, task="pixel", rebalanced_val=False, input_px=50):
     path = f"lightning_logs/version_{model_nr}/"
 
-    val_loader, val_dataset = get_data_loaders()
+    val_loader, val_dataset = get_data_loaders(task=task, rebalanced_val=rebalanced_val, input_px=input_px)
     
     model_names = [name for name in os.listdir(path+"checkpoints/") if ".ckpt" in name]
     model_path = path+"checkpoints/"+model_names[-1]
@@ -112,6 +115,15 @@ def predict_model(model_nr):
     print("----- Validation Metrics -----")
     print(valid_metrics)
 
+    # create new file called metrics.txt and save valid metrics
+    with open(path + "metrics.txt", "w") as file:
+        file.write("Chosen threshold: " + str(thresholdOpt))
+        file.write(str("----- Validation Metrics ----- \n"))
+        file.write(str(valid_metrics))
+
 if __name__ == "__main__":
-    model_nr = 23
-    predict_model(model_nr)
+    model_nr = "16521505" # 16508630
+    task = "tile_classification"
+    rebalanced_val = False
+    input_px = 50
+    predict_model(model_nr, task, rebalanced_val, input_px)

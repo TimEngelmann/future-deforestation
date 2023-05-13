@@ -83,7 +83,8 @@ class DeforestationDataset(Dataset):
                 y = indices[selected, 0]
                 x = indices[selected, 1]
 
-            sample = sample[:, y-i:y+i, x-i:x+i]
+            odd = self.input_px % 2
+            sample = sample[:, y-i:y+i+odd, x-i:x+i+odd]
             target = sample[-1, i, i] == 4
         elif self.task == "tile_regression":
             target = torch.count_nonzero(sample[-1] == 4)
@@ -96,7 +97,26 @@ class DeforestationDataset(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = DeforestationDataset("val", task="pixel", input_px=50, rebalance=True)
+    input_px_array = [50]
+    nr_target = []
+    for input_px in input_px_array:
+        train_dataset = DeforestationDataset("train", task="tile_classification", input_px=input_px, rebalanced=False)
+
+        class_0 = 0
+        class_1 = 0
+        for i in range(len(train_dataset)):
+            sample, target, last_layer = train_dataset[i]
+            if target == 0:
+                class_0 += 1
+            else:
+                class_1 += 1
+
+        print(class_0)
+        print(class_1)
+        nr_target.append(class_1/(class_0+class_1))
+
+    plt.plot(input_px_array, nr_target)
+    plt.show()
 
     '''
     for i in range(1000):
@@ -137,14 +157,3 @@ if __name__ == "__main__":
             break
     '''
 
-    class_0 = 0
-    class_1 = 0
-    for i in range(len(train_dataset)):
-        sample, target, last_layer = train_dataset[i]
-        if target == 0:
-            class_0 += 1
-        else:
-            class_1 += 1
-    
-    print(class_0)
-    print(class_1)

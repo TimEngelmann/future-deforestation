@@ -98,7 +98,7 @@ def preprocess_file(year, dst_crs, resolution, data_type="landuse"):
 def preprocess_data(dst_crs="EPSG:6933", resolution=30):
 
     # preprocess pasture and landuse data
-    for year in [2014]:
+    for year in [2017,2018]:
         preprocess_file(year, dst_crs, resolution, "pasture")
         preprocess_file(year, dst_crs, resolution, "landuse")
 
@@ -168,6 +168,41 @@ def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
     return slope_data_new
 
 
+def filter_and_save(dataset, features, filtered_loss, px_of_interest,
+                    offset_small, window_x, window_y, mid, delta, filter_px):
+    features = features.unfold(1, delta, delta).unfold(2, delta, delta)
+    features = features.moveaxis(0, 2)
+
+    target = features[:, :, -1, mid, mid]
+    current = features[:, :, -2, mid, mid]
+    distance = features[:, :, 1, mid, mid]  # 0=1 year , 1=5 years, 2=10 years
+
+    # save unfiltered data
+    filter_points = ((target == 4) | (target == 2)) & (current == 2)
+    indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
+    data_features = torch.cat([indices, features[:, :, mid, mid]], dim=1)  # y, x, features
+    torch.save(data_features, f"data/processed/tmp/{dataset}_features_{window_x}_{window_y}_unfiltered.pt")
+
+    # apply distance filter
+    filter_points = ((target == 4) | (target == 2)) & (current == 2) & (distance <= filter_px)
+
+    # keep track of filtering
+    px_of_interest_batch = np.count_nonzero((target == 4) & (current == 2))
+    px_of_interest_batch_kept = np.count_nonzero((target == 4) & (current == 2) & (distance <= filter_px))
+    filtered_loss += px_of_interest_batch - px_of_interest_batch_kept
+    px_of_interest += px_of_interest_batch
+
+    # indices = filter_points.nonzero() * delta + mid + torch.tensor([offset_small[1], offset_small[0]])
+    indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
+    data_features = torch.cat([indices, features[filter_points][:, :, mid, mid]], dim=1)  # y, x, features
+    data_layers = features[filter_points]
+
+    torch.save(data_features, f"data/processed/tmp/{dataset}_features_{window_x}_{window_y}.pt")
+    torch.save(data_layers, f"data/processed/tmp/{dataset}_layers_{window_x}_{window_y}.pt")
+
+    return filtered_loss, px_of_interest
+
+
 # iterate trough raster loading features and target iteratively avoiding memory issues
 def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="train", filter_px=50):
     past_horizons = [1, 5, 10]
@@ -175,7 +210,7 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
 
     mid = int(delta/2)
 
-    year = 2014 if dataset == "test" else 2009
+    year = 2017
     window_size_small = delta * window_multiple
     window_size_large = window_size_small + 2 * overlap
 
@@ -194,8 +229,10 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
     if not os.path.exists("data/processed/tmp"):
         os.makedirs("data/processed/tmp")
 
-    filtered_loss = 0
-    px_of_interest = 0
+    filtered_loss_train = 0
+    px_of_interest_train = 0
+    filtered_loss_test = 0
+    px_of_interest_test = 0
     for window_x in range(0, int(width / window_size_small) + 1):
         for window_y in range(0, int(height / window_size_small) + 1):
     # for window_x in range(4, 6):
@@ -205,85 +242,91 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
             offset_large = [window_x * window_size_small - overlap, window_y * window_size_small - overlap]
             offset_small = [window_x * window_size_small, window_y * window_size_small]
 
-            features = []
+            train_features = []
+            test_features = []
 
             # get past deforestation distances
-            current_deforestation = load_window(year, window_size=window_size_large, offset=offset_large, data_type="deforestation")
-            deforestation_aggregated = current_deforestation == 4
+            current_deforestation = load_window(year, window_size=window_size_large, offset=offset_large,
+                                               data_type="deforestation")
+            future_deforestation = load_window(year+future_horizon, window_size=window_size_large, offset=offset_large, data_type="deforestation")
+            deforestation_aggregated_train = current_deforestation == 4
+            deforestation_aggregated_test = future_deforestation == 4
+            data = current_deforestation == 4
             for i in range(1, 11):
                 if i in past_horizons:
-                    if np.count_nonzero(deforestation_aggregated) == 0:
-                        features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+                    if np.count_nonzero(deforestation_aggregated_train) == 0:
+                        train_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
                     else:
-                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                        features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
+                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated_train == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                        train_features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
+                    if np.count_nonzero(deforestation_aggregated_test) == 0:
+                        test_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+                    else:
+                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated_test == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                        test_features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
                     if i == past_horizons[-1]:
                         break
+                deforestation_aggregated_test = deforestation_aggregated_test | data
                 data = load_window(year-i, window_size=window_size_large, offset=offset_large, data_type="deforestation") == 4
-                deforestation_aggregated = deforestation_aggregated | data
+                deforestation_aggregated_train = deforestation_aggregated_train | data
 
-            # load current landuse
-            landuse = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
+            # load landuse
+            landuse_train = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
+            landuse_test = load_window(year+future_horizon, window_size=window_size_large, offset=offset_large, data_type="landuse")
 
-            # get urban distance
-            if np.count_nonzero(landuse == 4) == 0:
-                features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+            # get urban distance train
+            if np.count_nonzero(landuse_train == 4) == 0:
+                train_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
             else:
-                urban_distance = cv2.distanceTransform((landuse != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
+                urban_distance = cv2.distanceTransform((landuse_train != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                train_features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
+
+            # get urban distance test
+            if np.count_nonzero(landuse_test == 4) == 0:
+                test_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+            else:
+                urban_distance = cv2.distanceTransform((landuse_test != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                test_features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
 
             # get slope data
-            features.append(load_slope_data(path_fabdem_tiles, window_size=window_size_small, offset=offset_small))
+            slope_data = load_slope_data(path_fabdem_tiles, window_size=window_size_small, offset=offset_small)
+            train_features.append(slope_data)
+            test_features.append(slope_data)
 
-            # get class layers
-            features.append(landuse[overlap:-overlap, overlap:-overlap])
-            features.append(load_window(year, window_size=window_size_small, offset=offset_small, data_type="pasture"))
-            features.append(current_deforestation[overlap:-overlap, overlap:-overlap])
-            features.append(load_window(year+future_horizon, window_size=window_size_small, offset=offset_small, data_type="deforestation"))
+            # append landuse
+            train_features.append(landuse_train[overlap:-overlap, overlap:-overlap])
+            test_features.append(landuse_test[overlap:-overlap, overlap:-overlap])
 
-            '''
-            for idx, feature in enumerate(features):
-                if idx < 5:
-                    plt.imshow(feature[mid::delta, mid::delta])
-                elif idx == 5:
-                    cmap = colors.ListedColormap(['#D5D5E5', '#129912', '#bbfcac', '#ffffb2', '#ea9999', '#0000ff'])
-                    plt.imshow(feature[mid::delta, mid::delta], cmap=cmap, vmin=-0.5, vmax=5.5, interpolation='nearest')
-                elif idx == 6:
-                    cmap = colors.ListedColormap(['#D5D5E5', '#930D03', '#FA9E4F', '#2466A7'])
-                    plt.imshow(feature[mid::delta, mid::delta], cmap=cmap, vmin=-0.5, vmax=3.5, interpolation='nearest')
-                else:
-                    cmap = colors.ListedColormap(['#D5D5E5', '#FFFCB5', '#0F5018', '#409562', '#D90016', '#87FF0A', '#FD9407', '#191919'])
-                    plt.imshow(feature[mid::delta, mid::delta], cmap=cmap, vmin=-0.5, vmax=7.5, interpolation='nearest')
+            # append pasture
+            train_features.append(load_window(year, window_size=window_size_small, offset=offset_small, data_type="pasture"))
+            test_features.append(load_window(year+future_horizon, window_size=window_size_small, offset=offset_small, data_type="pasture"))
 
-                plt.show()
-            '''
+            # append current deforestation
+            train_features.append(current_deforestation[overlap:-overlap, overlap:-overlap])
+            test_features.append(future_deforestation[overlap:-overlap, overlap:-overlap])
 
-            features = [torch.from_numpy(feature) for feature in features]
-            features = torch.stack(features)
+            # append future deforestation (target)
+            train_features.append(future_deforestation[overlap:-overlap, overlap:-overlap])
+            test_features.append(load_window(year+future_horizon*2, window_size=window_size_small, offset=offset_small, data_type="deforestation"))
 
-            features = features.unfold(1, delta, delta).unfold(2, delta, delta)
-            features = features.moveaxis(0,2)
+            train_features = [torch.from_numpy(feature) for feature in train_features]
+            train_features = torch.stack(train_features)
 
-            target = features[:, :, -1, mid, mid]
-            current = features[:, :, -2, mid, mid]
-            distance = features[:, :, 1, mid, mid] # 0=1 year , 1=5 years, 2=10 years
-            filter_points = ((target == 4) | (target == 2)) & (current == 2) & (distance <= filter_px)
+            test_features = [torch.from_numpy(feature) for feature in test_features]
+            test_features = torch.stack(test_features)
 
-            # keep track of filtering
-            px_of_interest_batch = np.count_nonzero((target == 4) & (current == 2))
-            px_of_interest_batch_kept = np.count_nonzero((target == 4) & (current == 2) & (distance <= filter_px))
-            filtered_loss += px_of_interest_batch - px_of_interest_batch_kept
-            px_of_interest += px_of_interest_batch
+            # save data
+            filtered_loss_train, px_of_interest_train = filter_and_save("train", train_features,
+                                                                        filtered_loss_train, px_of_interest_train,
+                                                                        offset_small, window_x, window_y,
+                                                                        mid, delta, filter_px)
+            filtered_loss_test, px_of_interest_test = filter_and_save("test", test_features,
+                                                                      filtered_loss_test, px_of_interest_test,
+                                                                      offset_small, window_x, window_y,
+                                                                      mid, delta, filter_px)
 
-            # indices = filter_points.nonzero() * delta + mid + torch.tensor([offset_small[1], offset_small[0]])
-            indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
-            data_features = torch.cat([indices, features[filter_points][:, :, mid, mid]], dim=1) # y, x, features
-            data_layers = features[filter_points]
-
-            torch.save(data_features, f"data/processed/tmp/data_features_{window_x}_{window_y}.pt")
-            torch.save(data_layers, f"data/processed/tmp/data_layers_{window_x}_{window_y}.pt")
-
-    print("percentage of loss dropped: ", 1 - (filtered_loss / px_of_interest))
+    print("percentage of train loss dropped: ", 1 - (filtered_loss_train / px_of_interest_train))
+    print("percentage of test loss dropped: ", 1 - (filtered_loss_test / px_of_interest_test))
 
 
 def plot_data_split(train_features, val_features, delta=55, file_name="data_split.png"):
@@ -319,7 +362,7 @@ def split_data(data_features, data_layers, delta):
 def build_features(dst_crs, resolution, delta, window_multiple, overlap, dataset, filter_px):
 
     # preprocess_data(dst_crs, resolution)
-    # iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
+    iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
 
     # load tmp data
     data_features = []

@@ -8,6 +8,7 @@
     "num_workers": 5,
     "input_px": 50,
     "weighted_sampler": "",
+    "dropout": 0.0,
 
     "task": "pixel",
     "rebalanced_train": false,
