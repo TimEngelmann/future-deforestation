@@ -13,9 +13,12 @@ def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path=
                      weighted_sampler="linear", input_px=50, task="pixel",
                      rebalanced_train=False, rebalanced_val=False):
 
+    mean = torch.tensor([73.4592,   73.4592,   73.4592, 1224.8212,  153.1717])
+    std = torch.tensor([42.5693,   42.5693,   42.5693, 1021.8403,  128.6173])
+
     train_dataset = DeforestationDataset("train", max_elements=max_elements, root_path=root_path,
                                          weighted_sampler=weighted_sampler, input_px=input_px, task=task,
-                                         rebalanced=rebalanced_train)
+                                         rebalanced=rebalanced_train, mean=mean, std=std)
 
     if weighted_sampler != "":
         sampler = torch.utils.data.WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset))
@@ -24,6 +27,7 @@ def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path=
     else:
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
+    print("Train mean:", train_dataset.mean, "std:", train_dataset.std)
     val_dataset = DeforestationDataset("val", max_elements=max_elements, root_path=root_path,
                                        mean=train_dataset.mean, std=train_dataset.std, input_px=input_px, task=task,
                                        rebalanced=rebalanced_val)
@@ -36,7 +40,7 @@ def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path=
 def train_model(init_nr=None, 
                 max_epochs=30, lr=0.0001,
                 loss_fn_weight=0,
-                architecture="VGG",
+                architecture="original",
                 input_px=50,
                 accelerator='mps',
                 root_path="",

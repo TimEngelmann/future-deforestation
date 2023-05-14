@@ -7,12 +7,14 @@
     "architecture": "original",
     "num_workers": 5,
     "input_px": 50,
-    "weighted_sampler": "linear",
+    "weighted_sampler": "",
     "dropout": 0.3,
 
     "task": "pixel",
     "rebalanced_train": false,
     "rebalanced_val": false,
-    "loss_fn_weight": 10
+    "loss_fn_weight": 10,
+    "alpha": 1,
+    "gamma": 0
 }
 

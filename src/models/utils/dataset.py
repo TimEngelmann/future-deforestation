@@ -29,8 +29,12 @@ class DeforestationDataset(Dataset):
         else:
             transforms.append(torchvision.transforms.RandomHorizontalFlip())
             transforms.append(torchvision.transforms.RandomVerticalFlip())
-            if task == "tile_regression" or task == "tile_classification":
+            if task == "tile_regression" or task == "tile_classification" or task == "tile_segmentation":
                 transforms.append(torchvision.transforms.RandomCrop(input_px))
+        if task == "tile_segmentation":
+            # pad to size divisible by 32 with -1
+            pad = (32 - input_px % 32)//2
+            transforms.append(torchvision.transforms.Pad(pad, fill=0))
         self.transform = torchvision.transforms.Compose(transforms)
 
         self.data = torch.load(root_path + f"data/processed/{dataset}_layers.pt")
@@ -45,17 +49,17 @@ class DeforestationDataset(Dataset):
             self.data = self.data[torch.randperm(len(self.data))]
 
         if weighted_sampler != "":
-            weights = self.data[:, 1, :, :].mean(axis=(1,2))
+            weights = self.data[:, 1, :, :].float().mean(axis=(1,2))
             if weighted_sampler == "linear":
                 self.weights = 1 - weights / weights.max() + 1
             if weighted_sampler == "exponential":
                 self.weights = torch.exp(-2.5/weights.max() * weights)
 
-        self.data[:,:5] = torch.log(self.data[:,:5] + 10)
+        # self.data[:,:5] = torch.log(self.data[:,:5] + 10)
 
         if mean is None or std is None:
-            self.mean = self.data[:,:5].mean(axis=(0,2,3))
-            self.std = self.data[:,:5].std(axis=(0,2,3))
+            self.mean = self.data[:,:5].float().mean(axis=(0,2,3))
+            self.std = self.data[:,:5].float().std(axis=(0,2,3))
 
         for i in range(5):
             self.data[:,i] = (self.data[:,i] - self.mean[i]) / self.std[i]
@@ -88,9 +92,15 @@ class DeforestationDataset(Dataset):
             target = sample[-1, i, i] == 4
         elif self.task == "tile_regression":
             target = torch.count_nonzero(sample[-1] == 4)
+        elif self.task == "tile_segmentation":
+            target = sample[-1].clone()
+            target[((target != 2) & (target != 4)) | (sample[-2] != 2)] = -1
+            target[target == 2] = 0
+            target[target == 4] = 1
         else:
             target = (torch.count_nonzero(sample[-1] == 4) > 0)
 
+        # target = target.int() if self.task == "tile_segmentation" else target.float()
         features = sample[:-1]
 
         return features.float(), target.float(), sample[-1].float()
@@ -100,8 +110,9 @@ if __name__ == "__main__":
     input_px_array = [50]
     nr_target = []
     for input_px in input_px_array:
-        train_dataset = DeforestationDataset("train", task="tile_classification", input_px=input_px, rebalanced=False)
+        train_dataset = DeforestationDataset("val", task="tile_segmentation", input_px=input_px, rebalanced=False)
 
+        '''
         class_0 = 0
         class_1 = 0
         for i in range(len(train_dataset)):
@@ -117,20 +128,22 @@ if __name__ == "__main__":
 
     plt.plot(input_px_array, nr_target)
     plt.show()
-
     '''
+
     for i in range(1000):
         sample, target, last_layer = train_dataset[i]
 
-        if target == 1:
+        if torch.count_nonzero(target == 1) > 0:
             # undo feature normalization
             for i in range(5):
                 sample[i] = sample[i] * train_dataset.std[i] + train_dataset.mean[i]
-            sample[:5] = torch.exp(sample[:5]) - 10
+            # sample[:5] = torch.exp(sample[:5]) - 10
 
             sample = torch.cat((sample, last_layer.unsqueeze(0)), dim=0)
+            if train_dataset.task == "tile_segmentation":
+                sample = torch.cat((sample, target.unsqueeze(0)), dim=0)
 
-            titles = ["1year", "5year", "10year", "urban", "slope", "landuse", "pasture", "current", "future"]
+            titles = ["1year", "5year", "10year", "urban", "slope", "landuse", "pasture", "current", "future", "target"]
             for idx, feature in enumerate(sample):
                 if idx < 5:
                     mat = plt.imshow(feature)
@@ -145,6 +158,13 @@ if __name__ == "__main__":
                     mat = plt.imshow(feature, cmap=cmap, vmin=-0.5, vmax=3.5, interpolation='nearest')
                     cax = plt.colorbar(mat, ticks=np.arange(0, 4))
                     cax.ax.set_yticklabels(['unknown', 'severe', 'moderate', 'not. degraded'])
+                elif idx == 9:
+                    cmap = colors.ListedColormap(
+                        ['#D5D5E5', '#0F5018', '#D90016'])
+                    mat = plt.imshow(feature, cmap=cmap, vmin=-1.5, vmax=1.5, interpolation='nearest')
+                    cax = plt.colorbar(mat, ticks=np.arange(-1, 2))
+                    cax.ax.set_yticklabels(
+                        ['unknown', 'primary', 'prim. deforestation'])
                 else:
                     cmap = colors.ListedColormap(
                         ['#D5D5E5', '#FFFCB5', '#0F5018', '#409562', '#D90016', '#87FF0A', '#FD9407', '#191919'])
@@ -155,5 +175,4 @@ if __name__ == "__main__":
                 plt.title(titles[idx])
                 plt.show()
             break
-    '''
 

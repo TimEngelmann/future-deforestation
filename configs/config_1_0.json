@@ -10,11 +10,11 @@
     "weighted_sampler": "",
     "dropout": 0.3,
 
-    "task": "tile_classification",
-    "rebalanced_train": false,
+    "task": "pixel",
+    "rebalanced_train": true,
     "rebalanced_val": false,
-    "loss_fn_weight": 3.76,
+    "loss_fn_weight": 2,
     "alpha": 1,
-    "gamma": 1
+    "gamma": 0
 }
 

@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 from .cnn2d import compile_original_2D_CNN,compile_VGG_CNN
 from torchmetrics import MeanSquaredError, F1Score, Precision, Recall, AUROC
 from torchvision.models import resnet18
+import segmentation_models_pytorch as smp
 
 class ForestModel(pl.LightningModule):
 
@@ -16,6 +17,8 @@ class ForestModel(pl.LightningModule):
         elif architecture == "RESNET":
             self.model = resnet18(num_classes=1)
             self.model.conv1 = torch.nn.Conv2d(8, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        elif task == "tile_segmentation":
+            self.model = smp.Unet("resnet18", classes=1, in_channels=8)
         else:
             self.model = compile_original_2D_CNN(input_width=input_width, dropout=dropout)
 
@@ -56,13 +59,16 @@ class ForestModel(pl.LightningModule):
         target = batch[1]
         
         output = self.forward(features)
+
+        if self.task == "tile_segmentation":
+            mask = target != -1
+            output = output[mask.unsqueeze(1)]
+            target = target[mask]
         loss = self.loss_fn(output, target)
-        print(loss)
 
         if self.alpha != 0 and self.gamma != 0:
             loss_exp = torch.exp(-loss)
             loss = self.alpha * (1 - loss_exp) ** self.gamma * loss
-            print(loss)
 
         metrics_batch = {"loss": loss}
 

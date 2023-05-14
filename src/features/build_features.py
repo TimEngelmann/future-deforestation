@@ -189,7 +189,7 @@ def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
 
 
 # iterate trough raster loading features and target iteratively avoiding memory issues
-def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="train", filter_px=150):
+def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="train", filter_px=50):
     past_horizons = [1, 5, 10]
     future_horizon = 1
 
@@ -229,7 +229,6 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
             current_deforestation = load_window(year, window_size=window_size_large, offset=offset_large,
                                                data_type="deforestation")
             deforestation_aggregated = current_deforestation == 4
-            data = current_deforestation == 4
             for i in range(1, 11):
                 if i in past_horizons:
                     if np.count_nonzero(deforestation_aggregated) == 0:
@@ -240,7 +239,7 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
                     if i == past_horizons[-1]:
                         break
                 data = load_window(year-i, window_size=window_size_large, offset=offset_large, data_type="deforestation") == 4
-                deforestation_aggregated_train = deforestation_aggregated | data
+                deforestation_aggregated = deforestation_aggregated | data
 
             # load landuse
             landuse = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
@@ -352,8 +351,8 @@ def load_tmp_data(dataset):
 def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px):
 
     # preprocess_data(dst_crs, resolution)
-    # iterate_trough_raster(delta, window_multiple, overlap, "train", filter_px)
-    # iterate_trough_raster(delta, window_multiple, overlap, "test", filter_px)
+    iterate_trough_raster(delta, window_multiple, overlap, "train", filter_px)
+    iterate_trough_raster(delta, window_multiple, overlap, "test", filter_px)
 
     dataset = "train"
     data_features, data_layers = load_tmp_data(dataset)
@@ -388,6 +387,6 @@ if __name__ == "__main__":
     window_multiple = 200
     overlap = 2000
 
-    filter_px = 150
+    filter_px = 50
 
     build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px)

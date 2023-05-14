@@ -13,7 +13,7 @@
     "task": "tile_classification",
     "rebalanced_train": false,
     "rebalanced_val": false,
-    "loss_fn_weight": 3.76,
+    "loss_fn_weight": 5,
     "alpha": 1,
     "gamma": 0
 }

@@ -4,15 +4,17 @@
     "root_path": "/cluster/scratch/tengelmann/future-deforestation/",
     "max_epochs": 50,
     "lr": 0.0001,
-    "architecture": "RESNET",
+    "architecture": "original",
     "num_workers": 5,
     "input_px": 50,
-    "weighted_sampler": "",
-    "dropout": 0.0,
+    "weighted_sampler": "exponential",
+    "dropout": 0.3,
 
-    "task": "tile_classification",
+    "task": "pixel",
     "rebalanced_train": false,
     "rebalanced_val": false,
-    "loss_fn_weight": 0
+    "loss_fn_weight": 50,
+    "alpha": 1,
+    "gamma": 2
 }
 

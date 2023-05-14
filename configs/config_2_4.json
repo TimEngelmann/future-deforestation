@@ -6,13 +6,15 @@
     "lr": 0.0001,
     "architecture": "original",
     "num_workers": 5,
-    "input_px": 35,
+    "input_px": 50,
     "weighted_sampler": "",
     "dropout": 0.3,
 
-    "task": "tile_classification",
+    "task": "pixel",
     "rebalanced_train": false,
     "rebalanced_val": false,
-    "loss_fn_weight": 0
+    "loss_fn_weight": 100,
+    "alpha": 1,
+    "gamma": 0
 }
 
