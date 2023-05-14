@@ -118,99 +118,84 @@ def load_window(year, window_size=5100, offset=[0,0], data_type="landuse"):
     return data
 
 def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
-    bio_data_src = rasterio.open("data/processed/deforestation/deforestation_2009.tif")
-    window = rasterio.windows.Window(offset[0], offset[1], window_size, window_size)
-    window_bounds = rasterio.windows.bounds(window, bio_data_src.transform)
+    output_path = f"data/processed/slope/" + f"slope_{offset[0]}_{offset[1]}.tif"
+    if os.path.exists(output_path):
+        with rasterio.open(output_path) as src:
+            data = src.read()
+            data = data.squeeze().astype(np.float16)
+            return data
+    else:
+        bio_data_src = rasterio.open("data/processed/deforestation/deforestation_2017.tif")
+        window = rasterio.windows.Window(offset[0], offset[1], window_size, window_size)
+        window_bounds = rasterio.windows.bounds(window, bio_data_src.transform)
 
-    # Identify the tiles that intersect with the spatial extent of the window
-    tiles_to_load = []
-    for path_fabdem in path_fabdem_tiles:
-        slope_data_src = rasterio.open(path_fabdem)
-        # calculate transformed bounds
-        tile_bounds = rasterio.warp.transform_bounds(slope_data_src.crs, bio_data_src.crs, *slope_data_src.bounds)
-        # check if tile_bounds has any overlap with window_bounds
-        if not rasterio.coords.disjoint_bounds(tile_bounds, window_bounds):
-            tiles_to_load.append(slope_data_src)
-        else:
-            slope_data_src.close()
+        # Identify the tiles that intersect with the spatial extent of the window
+        tiles_to_load = []
+        for path_fabdem in path_fabdem_tiles:
+            slope_data_src = rasterio.open(path_fabdem)
+            # calculate transformed bounds
+            tile_bounds = rasterio.warp.transform_bounds(slope_data_src.crs, bio_data_src.crs, *slope_data_src.bounds)
+            # check if tile_bounds has any overlap with window_bounds
+            if not rasterio.coords.disjoint_bounds(tile_bounds, window_bounds):
+                tiles_to_load.append(slope_data_src)
+            else:
+                slope_data_src.close()
 
-    if len(tiles_to_load) == 0:
-        return np.zeros((window_size, window_size), np.float16)
+        if len(tiles_to_load) == 0:
+            return np.zeros((window_size, window_size), np.float16)
 
-    slope_data, slope_data_transform = merge(tiles_to_load)
+        slope_data, slope_data_transform = merge(tiles_to_load)
 
-    # Get bounds of the merged mosaic
-    width = slope_data.shape[2]
-    height = slope_data.shape[1]
-    bounds = rasterio.transform.array_bounds(height, width, slope_data_transform)
+        # Get bounds of the merged mosaic
+        width = slope_data.shape[2]
+        height = slope_data.shape[1]
+        bounds = rasterio.transform.array_bounds(height, width, slope_data_transform)
 
-    resolution = bio_data_src.transform[0]
-    transform, width, height = calculate_default_transform(
-        slope_data_src.crs, bio_data_src.crs, width, height, *bounds, resolution=(resolution, resolution))
+        resolution = bio_data_src.transform[0]
+        transform, width, height = calculate_default_transform(
+            slope_data_src.crs, bio_data_src.crs, width, height, *bounds, resolution=(resolution, resolution))
 
-    slope_data_new = np.zeros((height, width), np.float32)
-    reproject(
-        source=slope_data[0],
-        destination=slope_data_new,
-        src_transform=slope_data_transform,
-        src_crs=slope_data_src.crs,
-        dst_transform=transform,
-        dst_crs=bio_data_src.crs,
-        resampling=Resampling.bilinear)
+        slope_data_new = np.zeros((height, width), np.float32)
+        reproject(
+            source=slope_data[0],
+            destination=slope_data_new,
+            src_transform=slope_data_transform,
+            src_crs=slope_data_src.crs,
+            dst_transform=transform,
+            dst_crs=bio_data_src.crs,
+            resampling=Resampling.bilinear)
 
-    window_slope = rasterio.windows.from_bounds(*window_bounds, transform=transform)
-    window_slope = [int(round(window_slope.col_off)), int(round(window_slope.row_off)), int(round(window_slope.width)), int(round(window_slope.height))]
-    slope_data_new = slope_data_new[window_slope[1]:window_slope[1] + window_slope[3], window_slope[0]:window_slope[0] + window_slope[2]]
-    slope_data_new = np.pad(slope_data_new, ((0, window_size - slope_data_new.shape[0]),
-                                             (0, window_size - slope_data_new.shape[1])),
-                                            mode="constant", constant_values=0)
-    slope_data_new = slope_data_new.squeeze().astype(np.float16)
-    return slope_data_new
+        window_slope = rasterio.windows.from_bounds(*window_bounds, transform=transform)
+        window_slope = [int(round(window_slope.col_off)), int(round(window_slope.row_off)), int(round(window_slope.width)), int(round(window_slope.height))]
+        slope_data_new = slope_data_new[window_slope[1]:window_slope[1] + window_slope[3], window_slope[0]:window_slope[0] + window_slope[2]]
+        slope_data_new = np.pad(slope_data_new, ((0, window_size - slope_data_new.shape[0]),
+                                                 (0, window_size - slope_data_new.shape[1])),
+                                                mode="constant", constant_values=0)
+        slope_data_new = slope_data_new.squeeze().astype(np.float16)
 
+        '''
+        # save slope data (not worth it timewise)
+        out_meta = bio_data_src.meta.copy()
+        out_meta.update({
+            "driver": "GTiff",
+            'dtype': "float32",
+            'compress': "DEFLATE"
+        })
 
-def filter_and_save(dataset, features, filtered_loss, px_of_interest,
-                    offset_small, window_x, window_y, mid, delta, filter_px):
-    features = features.unfold(1, delta, delta).unfold(2, delta, delta)
-    features = features.moveaxis(0, 2)
-
-    target = features[:, :, -1, mid, mid]
-    current = features[:, :, -2, mid, mid]
-    distance = features[:, :, 1, mid, mid]  # 0=1 year , 1=5 years, 2=10 years
-
-    # save unfiltered data
-    filter_points = ((target == 4) | (target == 2)) & (current == 2)
-    indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
-    data_features = torch.cat([indices, features[:, :, mid, mid]], dim=1)  # y, x, features
-    torch.save(data_features, f"data/processed/tmp/{dataset}_features_{window_x}_{window_y}_unfiltered.pt")
-
-    # apply distance filter
-    filter_points = ((target == 4) | (target == 2)) & (current == 2) & (distance <= filter_px)
-
-    # keep track of filtering
-    px_of_interest_batch = np.count_nonzero((target == 4) & (current == 2))
-    px_of_interest_batch_kept = np.count_nonzero((target == 4) & (current == 2) & (distance <= filter_px))
-    filtered_loss += px_of_interest_batch - px_of_interest_batch_kept
-    px_of_interest += px_of_interest_batch
-
-    # indices = filter_points.nonzero() * delta + mid + torch.tensor([offset_small[1], offset_small[0]])
-    indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
-    data_features = torch.cat([indices, features[filter_points][:, :, mid, mid]], dim=1)  # y, x, features
-    data_layers = features[filter_points]
-
-    torch.save(data_features, f"data/processed/tmp/{dataset}_features_{window_x}_{window_y}.pt")
-    torch.save(data_layers, f"data/processed/tmp/{dataset}_layers_{window_x}_{window_y}.pt")
-
-    return filtered_loss, px_of_interest
+        with rasterio.open(output_path, 'w', **out_meta) as dst:
+            dst.write(slope_data_new, 1)
+        '''''
+        return slope_data_new
 
 
 # iterate trough raster loading features and target iteratively avoiding memory issues
-def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="train", filter_px=50):
+def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="train", filter_px=150):
     past_horizons = [1, 5, 10]
     future_horizon = 1
 
     mid = int(delta/2)
 
-    year = 2017
+    year = 2017 if dataset == "train" else 2018
     window_size_small = delta * window_multiple
     window_size_large = window_size_small + 2 * overlap
 
@@ -229,10 +214,6 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
     if not os.path.exists("data/processed/tmp"):
         os.makedirs("data/processed/tmp")
 
-    filtered_loss_train = 0
-    px_of_interest_train = 0
-    filtered_loss_test = 0
-    px_of_interest_test = 0
     for window_x in range(0, int(width / window_size_small) + 1):
         for window_y in range(0, int(height / window_size_small) + 1):
     # for window_x in range(4, 6):
@@ -242,91 +223,72 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
             offset_large = [window_x * window_size_small - overlap, window_y * window_size_small - overlap]
             offset_small = [window_x * window_size_small, window_y * window_size_small]
 
-            train_features = []
-            test_features = []
+            features = []
 
             # get past deforestation distances
             current_deforestation = load_window(year, window_size=window_size_large, offset=offset_large,
                                                data_type="deforestation")
-            future_deforestation = load_window(year+future_horizon, window_size=window_size_large, offset=offset_large, data_type="deforestation")
-            deforestation_aggregated_train = current_deforestation == 4
-            deforestation_aggregated_test = future_deforestation == 4
+            deforestation_aggregated = current_deforestation == 4
             data = current_deforestation == 4
             for i in range(1, 11):
                 if i in past_horizons:
-                    if np.count_nonzero(deforestation_aggregated_train) == 0:
-                        train_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+                    if np.count_nonzero(deforestation_aggregated) == 0:
+                        features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
                     else:
-                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated_train == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                        train_features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
-                    if np.count_nonzero(deforestation_aggregated_test) == 0:
-                        test_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
-                    else:
-                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated_test == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                        test_features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
+                        deforestation_distance = cv2.distanceTransform((deforestation_aggregated == False).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                        features.append(deforestation_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
                     if i == past_horizons[-1]:
                         break
-                deforestation_aggregated_test = deforestation_aggregated_test | data
                 data = load_window(year-i, window_size=window_size_large, offset=offset_large, data_type="deforestation") == 4
-                deforestation_aggregated_train = deforestation_aggregated_train | data
+                deforestation_aggregated_train = deforestation_aggregated | data
 
             # load landuse
-            landuse_train = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
-            landuse_test = load_window(year+future_horizon, window_size=window_size_large, offset=offset_large, data_type="landuse")
+            landuse = load_window(year, window_size=window_size_large, offset=offset_large, data_type="landuse")
 
-            # get urban distance train
-            if np.count_nonzero(landuse_train == 4) == 0:
-                train_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
+            # get urban distance
+            if np.count_nonzero(landuse == 4) == 0:
+                features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
             else:
-                urban_distance = cv2.distanceTransform((landuse_train != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                train_features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
-
-            # get urban distance test
-            if np.count_nonzero(landuse_test == 4) == 0:
-                test_features.append(np.ones((window_size_small, window_size_small), dtype=np.float16)*window_size_small)
-            else:
-                urban_distance = cv2.distanceTransform((landuse_test != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-                test_features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
+                urban_distance = cv2.distanceTransform((landuse != 4).astype(np.uint8), distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+                features.append(urban_distance[overlap:-overlap, overlap:-overlap].astype(np.float16))
 
             # get slope data
             slope_data = load_slope_data(path_fabdem_tiles, window_size=window_size_small, offset=offset_small)
-            train_features.append(slope_data)
-            test_features.append(slope_data)
+            features.append(slope_data)
 
-            # append landuse
-            train_features.append(landuse_train[overlap:-overlap, overlap:-overlap])
-            test_features.append(landuse_test[overlap:-overlap, overlap:-overlap])
-
-            # append pasture
-            train_features.append(load_window(year, window_size=window_size_small, offset=offset_small, data_type="pasture"))
-            test_features.append(load_window(year+future_horizon, window_size=window_size_small, offset=offset_small, data_type="pasture"))
-
-            # append current deforestation
-            train_features.append(current_deforestation[overlap:-overlap, overlap:-overlap])
-            test_features.append(future_deforestation[overlap:-overlap, overlap:-overlap])
+            # get remaining layers
+            features.append(landuse[overlap:-overlap, overlap:-overlap])
+            features.append(load_window(year, window_size=window_size_small, offset=offset_small, data_type="pasture"))
+            features.append(current_deforestation[overlap:-overlap, overlap:-overlap])
 
             # append future deforestation (target)
-            train_features.append(future_deforestation[overlap:-overlap, overlap:-overlap])
-            test_features.append(load_window(year+future_horizon*2, window_size=window_size_small, offset=offset_small, data_type="deforestation"))
+            features.append(load_window(year+future_horizon, window_size=window_size_small, offset=offset_small, data_type="deforestation"))
 
-            train_features = [torch.from_numpy(feature) for feature in train_features]
-            train_features = torch.stack(train_features)
+            features = [torch.from_numpy(feature) for feature in features]
+            features = torch.stack(features)
 
-            test_features = [torch.from_numpy(feature) for feature in test_features]
-            test_features = torch.stack(test_features)
+            features = features.unfold(1, delta, delta).unfold(2, delta, delta)
+            features = features.moveaxis(0, 2)
 
-            # save data
-            filtered_loss_train, px_of_interest_train = filter_and_save("train", train_features,
-                                                                        filtered_loss_train, px_of_interest_train,
-                                                                        offset_small, window_x, window_y,
-                                                                        mid, delta, filter_px)
-            filtered_loss_test, px_of_interest_test = filter_and_save("test", test_features,
-                                                                      filtered_loss_test, px_of_interest_test,
-                                                                      offset_small, window_x, window_y,
-                                                                      mid, delta, filter_px)
+            target = features[:, :, -1, mid, mid]
+            current = features[:, :, -2, mid, mid]
+            distance = features[:, :, 1, mid, mid]  # 0=1 year , 1=5 years, 2=10 years
 
-    print("percentage of train loss dropped: ", 1 - (filtered_loss_train / px_of_interest_train))
-    print("percentage of test loss dropped: ", 1 - (filtered_loss_test / px_of_interest_test))
+            # save unfiltered data
+            filter_points = ((target == 4) | (target == 2)) & (current == 2)
+            indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
+            data_features = torch.cat([indices, features[filter_points][:, :, mid, mid]], dim=1)  # y, x, features
+            torch.save(data_features, f"data/processed/tmp/{dataset}_features_{window_x}_{window_y}_unfiltered.pt")
+
+            filter_points = ((target == 4) | (target == 2)) & (current == 2) & (distance <= filter_px)
+
+            # indices = filter_points.nonzero() * delta + mid + torch.tensor([offset_small[1], offset_small[0]])
+            indices = (filter_points.nonzero() * delta + torch.tensor([offset_small[1], offset_small[0]])) / delta
+            data_features = torch.cat([indices, features[filter_points][:, :, mid, mid]], dim=1)  # y, x, features
+            data_layers = features[filter_points]
+
+            torch.save(data_features, f"data/processed/tmp/{dataset}_features_{window_x}_{window_y}.pt")
+            torch.save(data_layers, f"data/processed/tmp/{dataset}_layers_{window_x}_{window_y}.pt")
 
 
 def plot_data_split(train_features, val_features, delta=55, file_name="data_split.png"):
@@ -359,25 +321,42 @@ def split_data(data_features, data_layers, delta):
     return train_features, val_features, train_layers, val_layers
 
 
-def build_features(dst_crs, resolution, delta, window_multiple, overlap, dataset, filter_px):
-
-    # preprocess_data(dst_crs, resolution)
-    iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
-
-    # load tmp data
+def load_tmp_data(dataset):
     data_features = []
     data_layers = []
+    data_features_unfiltered = []
     files = os.listdir('data/processed/tmp')
     files.sort()
     for file in files:
         if file.endswith('.pt'):
-            if file.startswith('data_features'):
-                data_features.append(torch.load(f'data/processed/tmp/{file}'))
-            if file.startswith('data_layers'):
-                data_layers.append(torch.load(f'data/processed/tmp/{file}'))
-                
+            if file.startswith(f'{dataset}_features'):
+                if file.endswith('unfiltered.pt'):
+                    data_features_unfiltered.append(torch.load(f'data/processed/tmp/{file}').type(torch.float16))
+                else:
+                    data_features.append(torch.load(f'data/processed/tmp/{file}').type(torch.float16))
+            if file.startswith(f'{dataset}_layers'):
+                data_layers.append(torch.load(f'data/processed/tmp/{file}').type(torch.float16))
     data_features = torch.cat(data_features, dim=0).numpy()
+    data_features_unfiltered = torch.cat(data_features_unfiltered, dim=0).numpy()
     data_layers = torch.cat(data_layers, dim=0).numpy()
+
+    filtered_loss = (np.count_nonzero(data_features_unfiltered[:, -1] == 4) - np.count_nonzero(
+        data_features[:, -1] == 4)) \
+                    / np.count_nonzero(data_features_unfiltered[:, -1] == 4)
+    print(f"percentage of {dataset} loss dropped: ", filtered_loss)
+    torch.save(torch.from_numpy(data_features_unfiltered), f'data/processed/{dataset}_features_unfiltered.pt')
+
+    return data_features, data_layers
+
+
+def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px):
+
+    # preprocess_data(dst_crs, resolution)
+    # iterate_trough_raster(delta, window_multiple, overlap, "train", filter_px)
+    # iterate_trough_raster(delta, window_multiple, overlap, "test", filter_px)
+
+    dataset = "train"
+    data_features, data_layers = load_tmp_data(dataset)
 
     train_features, val_features, train_layers, val_layers = split_data(data_features, data_layers, delta)
 
@@ -385,6 +364,22 @@ def build_features(dst_crs, resolution, delta, window_multiple, overlap, dataset
     torch.save(torch.from_numpy(val_features), f'data/processed/val_features.pt')
     torch.save(torch.from_numpy(train_layers), f'data/processed/train_layers.pt')
     torch.save(torch.from_numpy(val_layers), f'data/processed/val_layers.pt')
+    del train_features, val_features, train_layers, val_layers, data_features, data_layers
+
+    dataset = "test"
+    test_features, test_layers = load_tmp_data(dataset)
+    val_features = torch.load(f'data/processed/val_features.pt').type(torch.float16)
+
+    test_features_df = pd.DataFrame(test_features[:,:2], columns=["y", "x"])
+    test_features_df["idx"] = test_features_df.index
+    val_features_df = pd.DataFrame(val_features[:,:2].numpy(), columns=["y", "x"])
+    val_features_df["idx"] = val_features_df.index
+    merged = pd.merge(test_features_df, val_features_df, on=["y", "x"], how="inner", suffixes=("_test", "_val"), validate="one_to_one")
+    print("Test points: ", test_features[merged.idx_test].shape[0])
+
+    torch.save(torch.from_numpy(test_features[merged.idx_test]), f'data/processed/test_features.pt')
+    torch.save(torch.from_numpy(test_layers[merged.idx_test]), f'data/processed/test_layers.pt')
+
 
 if __name__ == "__main__":
     dst_crs = "EPSG:6933"
@@ -392,8 +387,7 @@ if __name__ == "__main__":
     delta = 55
     window_multiple = 200
     overlap = 2000
-    dataset = "train"
 
-    filter_px = 50
+    filter_px = 150
 
-    build_features(dst_crs, resolution, delta, window_multiple, overlap, dataset, filter_px)
+    build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px)
