@@ -1,14 +1,14 @@
 import torch
 import pytorch_lightning as pl
 from .cnn2d import compile_original_2D_CNN,compile_VGG_CNN
-from torchmetrics import MeanSquaredError, F1Score, Precision, Recall, AUROC
+from torchmetrics import MeanSquaredError, F1Score, Precision, Recall, R2Score, Dice, JaccardIndex
 from torchvision.models import resnet18
 import segmentation_models_pytorch as smp
 
 class ForestModel(pl.LightningModule):
 
     def __init__(self, input_width, lr, loss_fn_weight, architecture, dropout=0, weight_decay=0, task="pixel",
-                 alpha=0, gamma=0):
+                 alpha=0, gamma=0, loss_fn="BCE"):
         super().__init__()
         self.save_hyperparameters()
 
@@ -18,21 +18,32 @@ class ForestModel(pl.LightningModule):
             self.model = resnet18(num_classes=1)
             self.model.conv1 = torch.nn.Conv2d(8, 64, kernel_size=3, stride=1, padding=1, bias=False)
         elif task == "tile_segmentation":
-            self.model = smp.Unet("resnet18", classes=1, in_channels=8)
+            self.model = smp.Unet("resnet18", classes=1, in_channels=8, encoder_weights=None)
         else:
             self.model = compile_original_2D_CNN(input_width=input_width, dropout=dropout)
 
         self.task = task
         if self.task == "tile_regression":
-            self.loss_fn = torch.nn.MSELoss()
             self.mse_metric = MeanSquaredError()
             self.rmse_metric = MeanSquaredError(squared=False)
+            self.r2_metric = R2Score()
+        else:
+            # loss_fn_weight = None if loss_fn_weight == 0 else torch.tensor([loss_fn_weight])
+            # self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=loss_fn_weight)
+            self.f1_metric = F1Score(task="binary", threshold=0.5, ignore_index=-1)
+            self.precision_metric = Precision(task="binary", threshold=0.5, ignore_index=-1)
+            self.recall_metric = Recall(task="binary", threshold=0.5, ignore_index=-1)
+
+        if self.task == "tile_segmentation":
+            self.iou = JaccardIndex(task="binary", num_classes=1, threshold=0.5, ignore_index=-1)
+
+        if loss_fn == "DiceLoss":
+            self.loss_fn = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
+        elif loss_fn == "MSELoss":
+            self.loss_fn = torch.nn.MSELoss()
         else:
             loss_fn_weight = None if loss_fn_weight == 0 else torch.tensor([loss_fn_weight])
-            self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=loss_fn_weight)
-            self.f1_metric = F1Score(task="binary")
-            self.precision_metric = Precision(task="binary")
-            self.recall_metric = Recall(task="binary")
+            self.loss_fn = smp.losses.SoftBCEWithLogitsLoss(pos_weight=loss_fn_weight, ignore_index=-1)
 
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -42,6 +53,7 @@ class ForestModel(pl.LightningModule):
         self.weight_decay = weight_decay
         self.alpha = alpha
         self.gamma = gamma
+        self.loss_fn_name = loss_fn
 
     def forward(self, features):
         output = self.model(features)
@@ -59,12 +71,13 @@ class ForestModel(pl.LightningModule):
         target = batch[1]
         
         output = self.forward(features)
+        if self.task == "tile_regression" and self.loss_fn_name == "MSELoss":
+            output = torch.sigmoid(output)
 
-        if self.task == "tile_segmentation":
-            mask = target != -1
-            output = output[mask.unsqueeze(1)]
-            target = target[mask]
-        loss = self.loss_fn(output, target)
+        if self.task == "pixel" and self.loss_fn_name == "DiceLoss":
+            loss = self.loss_fn(output.unsqueeze(1), target.unsqueeze(1))
+        else:
+            loss = self.loss_fn(output, target)
 
         if self.alpha != 0 and self.gamma != 0:
             loss_exp = torch.exp(-loss)
@@ -73,13 +86,19 @@ class ForestModel(pl.LightningModule):
         metrics_batch = {"loss": loss}
 
         if self.task == "tile_regression":
+            if self.loss_fn_name != "MSELoss":
+                output = torch.sigmoid(output)
             metrics_batch["mse"] = self.mse_metric(output, target)
             metrics_batch["rmse"] = self.rmse_metric(output, target)
+            metrics_batch["r2"] = self.r2_metric(output, target)
         else:
             output = torch.sigmoid(output)
             metrics_batch["f1"] = self.f1_metric(output, target)
             metrics_batch["precision"] = self.precision_metric(output, target)
             metrics_batch["recall"] = self.recall_metric(output, target)
+
+            if self.task == "tile_segmentation":
+                metrics_batch["iou"] = self.iou(output, target.type(torch.int))
 
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)

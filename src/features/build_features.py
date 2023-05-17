@@ -290,7 +290,7 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
             torch.save(data_layers, f"data/processed/tmp/{dataset}_layers_{window_x}_{window_y}.pt")
 
 
-def plot_data_split(train_features, val_features, delta=55, file_name="data_split.png"):
+def plot_data_split(train_features, val_features, delta=55, file_name="data_split"):
     print("Deforestation percentage: ", np.count_nonzero(train_features[:, -1] == 4) / train_features.shape[0])
     print("# train points: ", train_features.shape[0])
     print("# val points: ", val_features.shape[0])
@@ -351,10 +351,10 @@ def load_tmp_data(dataset):
 def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px):
 
     # preprocess_data(dst_crs, resolution)
-    iterate_trough_raster(delta, window_multiple, overlap, "train", filter_px)
-    iterate_trough_raster(delta, window_multiple, overlap, "test", filter_px)
 
+    '''
     dataset = "train"
+    iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
     data_features, data_layers = load_tmp_data(dataset)
 
     train_features, val_features, train_layers, val_layers = split_data(data_features, data_layers, delta)
@@ -364,8 +364,10 @@ def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_
     torch.save(torch.from_numpy(train_layers), f'data/processed/train_layers.pt')
     torch.save(torch.from_numpy(val_layers), f'data/processed/val_layers.pt')
     del train_features, val_features, train_layers, val_layers, data_features, data_layers
+    '''
 
     dataset = "test"
+    iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
     test_features, test_layers = load_tmp_data(dataset)
     val_features = torch.load(f'data/processed/val_features.pt').type(torch.float16)
 
@@ -383,8 +385,8 @@ def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_
 if __name__ == "__main__":
     dst_crs = "EPSG:6933"
     resolution = 30
-    delta = 55
-    window_multiple = 200
+    delta = 333  # 55
+    window_multiple = 33  # 200
     overlap = 2000
 
     filter_px = 50

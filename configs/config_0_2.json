@@ -2,7 +2,7 @@
     "init_nr": -1,
     "accelerator": "cuda",
     "root_path": "/cluster/scratch/tengelmann/future-deforestation/",
-    "max_epochs": 50,
+    "max_epochs": 26,
     "lr": 0.0001,
     "architecture": "original",
     "num_workers": 5,
@@ -13,6 +13,7 @@
     "task": "pixel",
     "rebalanced_train": true,
     "rebalanced_val": true,
+    "loss_fn": "BCE",
     "loss_fn_weight": 2,
     "alpha": 1,
     "gamma": 0

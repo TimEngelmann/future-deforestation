@@ -33,8 +33,9 @@ class DeforestationDataset(Dataset):
                 transforms.append(torchvision.transforms.RandomCrop(input_px))
         if task == "tile_segmentation":
             # pad to size divisible by 32 with -1
-            pad = (32 - input_px % 32)//2
-            transforms.append(torchvision.transforms.Pad(pad, fill=0))
+            if input_px % 32 != 0:
+                pad = (32 - input_px % 32)//2
+                transforms.append(torchvision.transforms.Pad(pad, fill=-1))
         self.transform = torchvision.transforms.Compose(transforms)
 
         self.data = torch.load(root_path + f"data/processed/{dataset}_layers.pt")
@@ -90,15 +91,19 @@ class DeforestationDataset(Dataset):
             odd = self.input_px % 2
             sample = sample[:, y-i:y+i+odd, x-i:x+i+odd]
             target = sample[-1, i, i] == 4
-        elif self.task == "tile_regression":
-            target = torch.count_nonzero(sample[-1] == 4)
-        elif self.task == "tile_segmentation":
+        else:
             target = sample[-1].clone()
             target[((target != 2) & (target != 4)) | (sample[-2] != 2)] = -1
             target[target == 2] = 0
             target[target == 4] = 1
-        else:
-            target = (torch.count_nonzero(sample[-1] == 4) > 0)
+            if self.task == "tile_regression":
+                forest = torch.count_nonzero(target == 0)
+                non_forest = torch.count_nonzero(target == 1)
+                target = non_forest / (forest + non_forest)
+            elif self.task == "tile_segmentation":
+                target = target.unsqueeze(0)
+            else:
+                target = (torch.count_nonzero(target == 1) > 0)
 
         # target = target.int() if self.task == "tile_segmentation" else target.float()
         features = sample[:-1]
@@ -107,28 +112,29 @@ class DeforestationDataset(Dataset):
 
 
 if __name__ == "__main__":
-    input_px_array = [50]
-    nr_target = []
-    for input_px in input_px_array:
-        train_dataset = DeforestationDataset("val", task="tile_segmentation", input_px=input_px, rebalanced=False)
+    task = "pixel"
+    input_px = 50
+    train_dataset = DeforestationDataset("val", task=task, input_px=input_px, rebalanced=False)
 
-        '''
-        class_0 = 0
-        class_1 = 0
-        for i in range(len(train_dataset)):
-            sample, target, last_layer = train_dataset[i]
+    class_0 = 0
+    class_1 = 0
+    for i in range(len(train_dataset)):
+        sample, target, last_layer = train_dataset[i]
+        if task == "tile_segmentation":
+            class_0 += torch.count_nonzero(target == 0)
+            class_1 += torch.count_nonzero(target == 1)
+        elif task == "tile_regression":
+            class_1 += target
+            class_0 += 1
+        else:
             if target == 0:
                 class_0 += 1
             else:
                 class_1 += 1
 
-        print(class_0)
-        print(class_1)
-        nr_target.append(class_1/(class_0+class_1))
-
-    plt.plot(input_px_array, nr_target)
-    plt.show()
-    '''
+    print(class_0)
+    print(class_1)
+    print(class_1/(class_0+class_1))
 
     for i in range(1000):
         sample, target, last_layer = train_dataset[i]
@@ -141,38 +147,51 @@ if __name__ == "__main__":
 
             sample = torch.cat((sample, last_layer.unsqueeze(0)), dim=0)
             if train_dataset.task == "tile_segmentation":
-                sample = torch.cat((sample, target.unsqueeze(0)), dim=0)
+                sample = torch.cat((sample, target), dim=0)
+            else:
+                segmentation_map = sample[-1].clone()
+                segmentation_map[((segmentation_map != 2) & (segmentation_map != 4)) | (sample[-2] != 2)] = -1
+                segmentation_map[segmentation_map == 2] = 0
+                segmentation_map[segmentation_map == 4] = 1
+                segmentation_map = segmentation_map.unsqueeze(0)
+                sample = torch.cat((sample, segmentation_map), dim=0)
 
+            green = "#115E05"
+            red = "#F87F78"
+
+            fig, axs = plt.subplots(1, 10, figsize=(54, 4))
+            axs = axs.flatten()
             titles = ["1year", "5year", "10year", "urban", "slope", "landuse", "pasture", "current", "future", "target"]
             for idx, feature in enumerate(sample):
                 if idx < 5:
-                    mat = plt.imshow(feature)
-                    cax = plt.colorbar(mat)
+                    mat = axs[idx].imshow(feature)
+                    cax = plt.colorbar(mat, ax=axs[idx])
                 elif idx == 5:
                     cmap = colors.ListedColormap(['#D5D5E5', '#129912', '#bbfcac', '#ffffb2', '#ea9999', '#0000ff'])
-                    mat = plt.imshow(feature, cmap=cmap, vmin=-0.5, vmax=5.5, interpolation='nearest')
-                    cax = plt.colorbar(mat, ticks=np.arange(0, 6))
+                    mat = axs[idx].imshow(feature, cmap=cmap, vmin=-0.5, vmax=5.5, interpolation='nearest')
+                    cax = plt.colorbar(mat, ticks=np.arange(0, 6), ax=axs[idx])
                     cax.ax.set_yticklabels(['unknown', 'forest', 'natural', 'farming', 'urban', 'water'])
                 elif idx == 6:
                     cmap = colors.ListedColormap(['#D5D5E5', '#930D03', '#FA9E4F', '#2466A7'])
-                    mat = plt.imshow(feature, cmap=cmap, vmin=-0.5, vmax=3.5, interpolation='nearest')
-                    cax = plt.colorbar(mat, ticks=np.arange(0, 4))
+                    mat = axs[idx].imshow(feature, cmap=cmap, vmin=-0.5, vmax=3.5, interpolation='nearest')
+                    cax = plt.colorbar(mat, ticks=np.arange(0, 4), ax=axs[idx])
                     cax.ax.set_yticklabels(['unknown', 'severe', 'moderate', 'not. degraded'])
                 elif idx == 9:
                     cmap = colors.ListedColormap(
-                        ['#D5D5E5', '#0F5018', '#D90016'])
-                    mat = plt.imshow(feature, cmap=cmap, vmin=-1.5, vmax=1.5, interpolation='nearest')
-                    cax = plt.colorbar(mat, ticks=np.arange(-1, 2))
+                        ['#D5D5E5', green, red])
+                    mat = axs[idx].imshow(feature, cmap=cmap, vmin=-1.5, vmax=1.5, interpolation='nearest')
+                    cax = plt.colorbar(mat, ticks=np.arange(-1, 2), ax=axs[idx])
                     cax.ax.set_yticklabels(
-                        ['unknown', 'primary', 'prim. deforestation'])
+                        ['unknown', 'primary', 'prim. defores.'])
                 else:
                     cmap = colors.ListedColormap(
-                        ['#D5D5E5', '#FFFCB5', '#0F5018', '#409562', '#D90016', '#87FF0A', '#FD9407', '#191919'])
-                    mat = plt.imshow(feature, cmap=cmap, vmin=-0.5, vmax=7.5, interpolation='nearest')
-                    cax = plt.colorbar(mat, ticks=np.arange(0, 8))
-                    cax.ax.set_yticklabels(['unknown', 'anthropic', 'primary', 'secondary', 'prim. deforestation', 'regrowth',
-                                            'sec. deforestation', 'noise'])
-                plt.title(titles[idx])
-                plt.show()
+                        ['#D5D5E5', '#FFFCB5', green, '#409562', red, '#87FF0A', '#FD9407', '#191919'])
+                    mat = axs[idx].imshow(feature, cmap=cmap, vmin=-0.5, vmax=7.5, interpolation='nearest')
+                    cax = plt.colorbar(mat, ticks=np.arange(0, 8), ax=axs[idx])
+                    cax.ax.set_yticklabels(['unknown', 'anthropic', 'primary', 'secondary', 'prim. defores.', 'regrowth',
+                                            'sec. defores.', 'noise'])
+                axs[idx].set_title(titles[idx])
+                axs[idx].axis('off')
+            plt.show()
             break
 

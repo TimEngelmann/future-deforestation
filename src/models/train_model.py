@@ -13,8 +13,9 @@ def get_data_loaders(batch_size=64, num_workers=8, max_elements=None, root_path=
                      weighted_sampler="linear", input_px=50, task="pixel",
                      rebalanced_train=False, rebalanced_val=False):
 
-    mean = torch.tensor([73.4592,   73.4592,   73.4592, 1224.8212,  153.1717])
-    std = torch.tensor([42.5693,   42.5693,   42.5693, 1021.8403,  128.6173])
+    # mean = torch.tensor([98.2880,   25.6084,   21.9719, 1127.5090,  153.2372])
+    # std = torch.tensor([163.7474,  17.1673,  16.4770, 921.9048, 129.4803])
+    mean = std = None
 
     train_dataset = DeforestationDataset("train", max_elements=max_elements, root_path=root_path,
                                          weighted_sampler=weighted_sampler, input_px=input_px, task=task,
@@ -49,6 +50,7 @@ def train_model(init_nr=None,
                 weight_decay=0.0,
                 weighted_sampler="",
                 task="pixel",
+                loss_fn="BCE",
                 rebalanced_train=False,
                 rebalanced_val=False,
                 alpha=None,
@@ -61,7 +63,7 @@ def train_model(init_nr=None,
                                                 rebalanced_train=rebalanced_train, rebalanced_val=rebalanced_val)
     
     model = ForestModel(input_px, lr, loss_fn_weight, architecture, dropout, weight_decay,
-                        task=task, alpha=alpha, gamma=gamma)
+                        task=task, alpha=alpha, gamma=gamma, loss_fn=loss_fn)
     if init_nr >= 0:
         init_path = f"lightning_logs/version_{init_nr}/checkpoints/"
         checkpoints = [checkpoint for checkpoint in os.listdir(init_path) if ".ckpt" in checkpoint]
@@ -100,6 +102,7 @@ if __name__ == "__main__":
                 task=hyp['task'],
                 rebalanced_train=hyp['rebalanced_train'],
                 rebalanced_val=hyp['rebalanced_val'],
+                loss_fn=hyp['loss_fn'],
                 loss_fn_weight=hyp['loss_fn_weight'],
                 dropout=hyp['dropout'],
                 alpha=hyp['alpha'],
