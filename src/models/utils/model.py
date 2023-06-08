@@ -5,6 +5,7 @@ from torchmetrics import MeanSquaredError, F1Score, Precision, Recall, R2Score, 
 from torchvision.models import resnet18
 import segmentation_models_pytorch as smp
 
+
 class ForestModel(pl.LightningModule):
 
     def __init__(self, input_width, lr, loss_fn_weight, architecture, dropout=0, weight_decay=0, task="pixel",
@@ -12,6 +13,7 @@ class ForestModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        # load corresponding model
         if architecture == "VGG":
             self.model = compile_VGG_CNN(input_width=input_width)
         elif architecture == "RESNET":
@@ -22,6 +24,7 @@ class ForestModel(pl.LightningModule):
         else:
             self.model = compile_original_2D_CNN(input_width=input_width, dropout=dropout)
 
+        # set metrics according to classification/regression task
         self.task = task
         if self.task == "tile_regression":
             self.mse_metric = MeanSquaredError()
@@ -34,9 +37,11 @@ class ForestModel(pl.LightningModule):
             self.precision_metric = Precision(task="binary", threshold=0.5, ignore_index=-1)
             self.recall_metric = Recall(task="binary", threshold=0.5, ignore_index=-1)
 
+        # add metric for segmentation task
         if self.task == "tile_segmentation":
             self.iou = JaccardIndex(task="binary", num_classes=1, threshold=0.5, ignore_index=-1)
 
+        # set loss function
         if loss_fn == "DiceLoss":
             self.loss_fn = smp.losses.DiceLoss(mode="binary", ignore_index=-1)
         elif loss_fn == "MSELoss":
@@ -45,10 +50,12 @@ class ForestModel(pl.LightningModule):
             loss_fn_weight = None if loss_fn_weight == 0 else torch.tensor([loss_fn_weight])
             self.loss_fn = smp.losses.SoftBCEWithLogitsLoss(pos_weight=loss_fn_weight, ignore_index=-1)
 
+        # initialize lists for metrics
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
 
+        # set hyperparameters
         self.lr = lr
         self.weight_decay = weight_decay
         self.alpha = alpha
@@ -58,6 +65,7 @@ class ForestModel(pl.LightningModule):
     def forward(self, features):
         output = self.model(features)
 
+        # ensure consistent output shape
         if len(output.shape) == 2:
             output = output.squeeze()
         if len(output.shape) == 0:
@@ -70,24 +78,29 @@ class ForestModel(pl.LightningModule):
         features = batch[0]
         target = batch[1]
         
-        output = self.forward(features)
+        output = self.forward(features)  # forward pass
+
+        # if using MSE loss on deforestation rates, need to apply sigmoid before
         if self.task == "tile_regression" and self.loss_fn_name == "MSELoss":
             output = torch.sigmoid(output)
 
+        # calculate loss with correct loss function
         if self.task == "pixel" and self.loss_fn_name == "DiceLoss":
             loss = self.loss_fn(output.unsqueeze(1), target.unsqueeze(1))
         else:
             loss = self.loss_fn(output, target)
 
+        # if using focal loss, apply focal loss
         if self.alpha != 0 and self.gamma != 0:
             loss_exp = torch.exp(-loss)
             loss = self.alpha * (1 - loss_exp) ** self.gamma * loss
 
-        metrics_batch = {"loss": loss}
+        metrics_batch = {"loss": loss}  # save loss
 
+        # compute metrics
         if self.task == "tile_regression":
             if self.loss_fn_name != "MSELoss":
-                output = torch.sigmoid(output)
+                output = torch.sigmoid(output)  # apply sigmoid if not already done
             metrics_batch["mse"] = self.mse_metric(output, target)
             metrics_batch["rmse"] = self.rmse_metric(output, target)
             metrics_batch["r2"] = self.r2_metric(output, target)
@@ -100,6 +113,7 @@ class ForestModel(pl.LightningModule):
             if self.task == "tile_segmentation":
                 metrics_batch["iou"] = self.iou(output, target.type(torch.int))
 
+        # save metrics
         if stage == "train":
             self.training_step_outputs.append(metrics_batch)
         if stage == "valid":
@@ -111,11 +125,12 @@ class ForestModel(pl.LightningModule):
 
     def shared_epoch_end(self, outputs, stage):
 
+        # stack metrics from all batches
         metrics_epoch = {}
         for key, value in outputs[0].items():
             metrics_epoch[f"{stage}_{key}"] = torch.stack([x[key] for x in outputs]).mean()
 
-        self.log_dict(metrics_epoch, prog_bar=True)
+        self.log_dict(metrics_epoch, prog_bar=True)  # log metrics
         return metrics_epoch
 
     def training_step(self, batch, batch_idx):

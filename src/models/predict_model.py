@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+# get the dataloaders for the given dataset
 def get_data_loaders(dataset, batch_size=64, num_workers=5, task="pixel", rebalanced_val=False, input_px=50):
 
     # for 55px width dataset
@@ -25,6 +26,8 @@ def get_data_loaders(dataset, batch_size=64, num_workers=5, task="pixel", rebala
 
     return val_loader, val_dataset
 
+
+# plot targets and predictions as histogram
 def plot_hist(targets, predictions, dataset, path, threshold=0.5, suffix=""):
     # plot distribution normalized
     green = "#115E05"
@@ -51,6 +54,8 @@ def plot_hist(targets, predictions, dataset, path, threshold=0.5, suffix=""):
     plt.savefig(path + f"{dataset}_hist{suffix}.png")
     plt.close()
 
+
+# choose threshold to maximize f1 score
 def choose_thresholds(predictions, targets, dataset, path, suffix=""):
     # filter out -1 values
     predictions = predictions[targets != -1].flatten()
@@ -89,9 +94,11 @@ def choose_thresholds(predictions, targets, dataset, path, suffix=""):
 
 def predict_model(path, task="pixel", rebalanced_val=False, input_px=50, suffix="", predict=True):
 
+    # get latest model
     model_names = [name for name in os.listdir(path+"checkpoints/") if ".ckpt" in name]
     model_path = path+"checkpoints/"+model_names[-1]
 
+    # init trainer if asked to predict
     if predict:
         model = ForestModel.load_from_checkpoint(model_path)
         trainer = pl.Trainer(
@@ -103,20 +110,19 @@ def predict_model(path, task="pixel", rebalanced_val=False, input_px=50, suffix=
     metrics = {}
     for dataset in ["val", "test"]:
         if predict:
+            # predict and save predictions and targets
             data_loader, data_dataset = get_data_loaders(dataset, task=task, rebalanced_val=rebalanced_val, input_px=input_px)
             predictions_dict = trainer.predict(model, data_loader)
-
-            # concatenate predictions indicated by "preds" key
             predictions = torch.cat([pred["preds"] for pred in predictions_dict])
             torch.save(predictions, path+f"{dataset}_predictions{suffix}.pt")
-
-            # concatenate targets indicated by "target" key
             targets = torch.cat([pred["target"] for pred in predictions_dict])
             torch.save(targets, path+f"{dataset}_targets{suffix}.pt")
         else:
+            # load predictions and targets
             predictions = torch.load(path+f"{dataset}_predictions{suffix}.pt")
             targets = torch.load(path+f"{dataset}_targets{suffix}.pt")
 
+        # for all classification tasks need to choose threshold
         if task != "tile_regression":
             threshold = choose_thresholds(predictions, targets, dataset, path, suffix=suffix)
 
@@ -133,6 +139,8 @@ def predict_model(path, task="pixel", rebalanced_val=False, input_px=50, suffix=
                 f"{dataset}_recall": recall(predictions, targets).item(),
                 f"{dataset}_f1": f1(predictions, targets).item()}
             metrics.update(dataset_metrics)
+
+        # for regression tasks compute different metrics
         else:
             plot_hist(targets, predictions, dataset, path, threshold=0, suffix=suffix)
 
@@ -153,9 +161,9 @@ def predict_model(path, task="pixel", rebalanced_val=False, input_px=50, suffix=
         file.write(str(metrics))
 
 if __name__ == "__main__":
-    task = "tile_regression"
-    path = "models/version_16890429/"
-    # path = "lightning_logs/version_16763565/"
-    rebalanced_val = False
-    input_px = 50
+    task = "tile_regression"  # set according to model configs
+    path = "models/version_16890429/"  # set path to model
+    # path = "lightning_logs/version_16763565/"  # set path to model
+    rebalanced_val = False  # choose whether to use rebalanced validation set (should be False)
+    input_px = 50  # set according to model configs
     predict_model(path, task, rebalanced_val, input_px, suffix="", predict=True)

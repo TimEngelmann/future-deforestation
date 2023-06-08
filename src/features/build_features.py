@@ -28,6 +28,7 @@ def transform_landuse_to_labels(land_use):
         land_use_new[land_use == key] = value
     return land_use_new
 
+
 # transform map biomass data
 def preprocess_file(year, dst_crs, resolution, data_type="landuse"):
     if data_type == "deforestation":
@@ -117,6 +118,8 @@ def load_window(year, window_size=5100, offset=[0,0], data_type="landuse"):
         data = data.squeeze().astype(np.uint8)
     return data
 
+
+# load slope data matching the window
 def load_slope_data(path_fabdem_tiles, window_size=5100, offset=[0,0]):
     output_path = f"data/processed/slope/" + f"slope_{offset[0]}_{offset[1]}.tif"
     if os.path.exists(output_path):
@@ -290,6 +293,7 @@ def iterate_trough_raster(delta=55, window_multiple=500, overlap=5000, dataset="
             torch.save(data_layers, f"data/processed/tmp/{dataset}_layers_{window_x}_{window_y}.pt")
 
 
+# plot data split and calculate deforestation percentage
 def plot_data_split(train_features, val_features, delta=55, file_name="data_split"):
     print("Deforestation percentage: ", np.count_nonzero(train_features[:, -1] == 4) / train_features.shape[0])
     print("# train points: ", train_features.shape[0])
@@ -311,6 +315,7 @@ def plot_data_split(train_features, val_features, delta=55, file_name="data_spli
     plt.close()
 
 
+# split data into train and validation set
 def split_data(data_features, data_layers, delta):
     # split datapoints into train and validation set
     train_features, val_features, train_layers, val_layers = train_test_split(data_features, data_layers,
@@ -320,6 +325,7 @@ def split_data(data_features, data_layers, delta):
     return train_features, val_features, train_layers, val_layers
 
 
+# load data from tmp folder and save it to processed folder
 def load_tmp_data(dataset):
     data_features = []
     data_layers = []
@@ -348,9 +354,10 @@ def load_tmp_data(dataset):
     return data_features, data_layers
 
 
+# build features from raw data
 def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px):
 
-    preprocess_data(dst_crs, resolution)
+    preprocess_data(dst_crs, resolution)  # transform data to right projection and resolution
 
     dataset = "train"
     iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
@@ -381,12 +388,12 @@ def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_
 
 
 if __name__ == "__main__":
-    dst_crs = "EPSG:6933"  # EPSG:6933
-    resolution = 30  # 30
-    delta = 55  # 55
-    window_multiple = 200  # 200
-    overlap = 2000  # 2000
+    dst_crs = "EPSG:6933"  # EPSG:6933 - projection for the data
+    resolution = 30  # 30 - px resolution of the data
+    delta = 55  # 55 - size of a tile
+    window_multiple = 200  # 200 - number of tiles to be processed at once
+    overlap = 2000  # 2000 - load more data than needed to avoid edge effects
 
-    filter_px = 50  # 50
+    filter_px = 50  # 50 - filter out tiles further away than 50 px from the nearest recent deforestation pixel
 
     build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px)

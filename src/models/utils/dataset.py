@@ -12,10 +12,6 @@ from matplotlib import colors
 class DeforestationDataset(Dataset):
     def __init__(self, dataset, max_elements=None, root_path="", mean=None, std=None,
                  weighted_sampler="", input_px=50, task="pixel", rebalanced=False):
-        """
-        Args:
-            dataset: "train", "val", "test"
-        """
         self.dataset = dataset
         self.task = task
         self.input_px = input_px
@@ -23,6 +19,7 @@ class DeforestationDataset(Dataset):
         self.mean = mean
         self.std = std
 
+        # define transforms according to dataset and task
         transforms = []
         if self.dataset == "val":
             transforms.append(torchvision.transforms.CenterCrop(input_px))
@@ -38,10 +35,12 @@ class DeforestationDataset(Dataset):
                 transforms.append(torchvision.transforms.Pad(pad, fill=-1))
         self.transform = torchvision.transforms.Compose(transforms)
 
+        # load data
         self.data = torch.load(root_path + f"data/processed/{dataset}_layers.pt")
         if max_elements is not None:
             self.data = self.data[:max_elements]
 
+        # rebalance dataset if requested
         if rebalanced:
             targets = self.data[:, -1, self.data.shape[2] // 2, self.data.shape[3] // 2]
             majority = self.data[targets == 2]
@@ -49,6 +48,7 @@ class DeforestationDataset(Dataset):
             self.data = torch.cat([majority[:int(4*len(minority))], minority])
             self.data = self.data[torch.randperm(len(self.data))]
 
+        # calculate weights for weighted sampler
         if weighted_sampler != "":
             weights = self.data[:, 1, :, :].float().mean(axis=(1,2))
             if weighted_sampler == "linear":
@@ -56,12 +56,14 @@ class DeforestationDataset(Dataset):
             if weighted_sampler == "exponential":
                 self.weights = torch.exp(-2.5/weights.max() * weights)
 
-        # self.data[:,:5] = torch.log(self.data[:,:5] + 10)
+        # self.data[:,:5] = torch.log(self.data[:,:5] + 10)  # log transform (disabled)
 
+        # calculate mean and std if not provided
         if mean is None or std is None:
             self.mean = self.data[:,:5].float().mean(axis=(0,2,3))
             self.std = self.data[:,:5].float().std(axis=(0,2,3))
 
+        # normalize
         for i in range(5):
             self.data[:,i] = (self.data[:,i] - self.mean[i]) / self.std[i]
 
@@ -78,6 +80,7 @@ class DeforestationDataset(Dataset):
             x = mid
             y = mid
 
+            # manual data augmentation
             if self.dataset == "train":
                 # valid_pixels = (sample[-2] == 2) & ((sample[-1] == 4) | (sample[-1] == 2))
                 valid_pixels = (sample[-1] == sample[-1, mid, mid])
@@ -92,10 +95,13 @@ class DeforestationDataset(Dataset):
             sample = sample[:, y-i:y+i+odd, x-i:x+i+odd]
             target = sample[-1, i, i] == 4
         else:
+            # select all pixels that are forest now and will be forest or deforested in next year
             target = sample[-1].clone()
             target[((target != 2) & (target != 4)) | (sample[-2] != 2)] = -1
             target[target == 2] = 0
             target[target == 4] = 1
+
+            # calculate target according to task
             if self.task == "tile_regression":
                 forest = torch.count_nonzero(target == 0)
                 non_forest = torch.count_nonzero(target == 1)
@@ -116,6 +122,7 @@ if __name__ == "__main__":
     input_px = 50
     train_dataset = DeforestationDataset("val", task=task, input_px=input_px, rebalanced=False)
 
+    # find out how many samples are in each class
     class_0 = 0
     class_1 = 0
     for i in range(len(train_dataset)):
@@ -136,6 +143,7 @@ if __name__ == "__main__":
     print(class_1)
     print(class_1/(class_0+class_1))
 
+    # plot example where some deforestation is happening
     for i in range(1000):
         sample, target, last_layer = train_dataset[i]
 

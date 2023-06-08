@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+
 def compile_original_2D_CNN(input_width=35, dropout=0):
     input_dim=8
     hidden_dim=[64, 128, 256]
@@ -47,6 +48,7 @@ def compile_original_2D_CNN(input_width=35, dropout=0):
     model = torch.nn.Sequential(*layers)
 
     return model
+
 
 def compile_VGG_CNN(input_width=400):
     input_dim=8
