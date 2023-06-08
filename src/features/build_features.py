@@ -350,9 +350,8 @@ def load_tmp_data(dataset):
 
 def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px):
 
-    # preprocess_data(dst_crs, resolution)
+    preprocess_data(dst_crs, resolution)
 
-    '''
     dataset = "train"
     iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
     data_features, data_layers = load_tmp_data(dataset)
@@ -364,7 +363,6 @@ def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_
     torch.save(torch.from_numpy(train_layers), f'data/processed/train_layers.pt')
     torch.save(torch.from_numpy(val_layers), f'data/processed/val_layers.pt')
     del train_features, val_features, train_layers, val_layers, data_features, data_layers
-    '''
 
     dataset = "test"
     iterate_trough_raster(delta, window_multiple, overlap, dataset, filter_px)
@@ -383,12 +381,12 @@ def build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_
 
 
 if __name__ == "__main__":
-    dst_crs = "EPSG:6933"
-    resolution = 30
-    delta = 333  # 55
-    window_multiple = 33  # 200
-    overlap = 2000
+    dst_crs = "EPSG:6933"  # EPSG:6933
+    resolution = 30  # 30
+    delta = 55  # 55
+    window_multiple = 200  # 200
+    overlap = 2000  # 2000
 
-    filter_px = 50
+    filter_px = 50  # 50
 
     build_features(dst_crs, resolution, delta, window_multiple, overlap, filter_px)

@@ -9,5 +9,6 @@
 *.out
 /.idea
 /.ipynb_checkpoints
-/models
+/models/
 *.ckpt
+/old

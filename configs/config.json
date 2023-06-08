@@ -6,7 +6,7 @@
     "lr": 0.0001,
     "architecture": "UNet",
     "num_workers": 5,
-    "input_px": 256,
+    "input_px": 50,
     "weighted_sampler": "",
     "dropout": 0.3,
 
