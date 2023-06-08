@@ -25,13 +25,13 @@ Create a new conda environment and install the following packages:
 - rasterio
 
 ## Execution
-To train a model, download the processed dataset from [here](https://polybox.ethz.ch/index.php/s/izGOJlS52qj9zWj) and place it in the data folder. 
+To train a model, request the processed dataset and place it in the data folder. 
 Adjust the ````config.json```` file to your wishes. Check out the config files used for our model training, to see the different options. Ensure that in ````train_model.py```` the config file is loaded correctly. Now, the model should start training. To train a model on Euler, you can use the ````submit.sh```` script, and specify the config file as an argument.
 
-To make predictions with a trained model, use your own or download our models from [here](https://polybox.ethz.ch/index.php/s/izGOJlS52qj9zWj) and place it in the models folder. Then, set the model name and properties in the file ````predict_model.py````. The predictions will be saved in the same folder as the model.
+To make predictions with a trained model, use your own or request our models and place it in the models folder. Then, set the model name and properties in the file ````predict_model.py````. The predictions will be saved in the same folder as the model.
 
 ## Code Structure
-Most files are provided through this repository. Additionally, we provide the processed data, the described models and our reports [here](https://polybox.ethz.ch/index.php/s/izGOJlS52qj9zWj). If you want to access the raw data, refer to: [Mapbiomas](https://mapbiomas.org/download) and [FABDEM](https://data.bris.ac.uk/data/dataset/s5hqmjcdj8yo2ibzi9b4ew3sn). If you need any other files, feel free to contact us.
+Most files are provided through this repository. Additionally, we are happy to share the processed data, the described models and our reports upon request. If you want to access the raw data, refer to: [Mapbiomas](https://mapbiomas.org/download) and [FABDEM](https://data.bris.ac.uk/data/dataset/s5hqmjcdj8yo2ibzi9b4ew3sn). If you have any other questions, feel free to contact us.
 
 ```
 .
