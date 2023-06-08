@@ -12,3 +12,4 @@
 /models/
 *.ckpt
 /old
+/documentation/
