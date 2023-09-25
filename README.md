@@ -1,6 +1,6 @@
 # Can Deep Learning help to forecast deforestation in the Amazonian Rainforest?
 ## Abstract
-Deforestation is a major driver of climate change. Conservation projects aim to protect endangered regions. Researchers have proposed several ways to derive baseline counterfactuals for the project sites retrospectively. However, limited tools exist to forecast deforestation in advance, which would help to identify threatened sites. This study examines the effectiveness of Deep Learning (DL) models in predicting the location of deforestation 1-year ahead. The models yield unsatisfactory results for pixel-wise classification (F1: 0.274) at a 30 m resolution. When simplifying the task to binary classification of 1.5 km squared tiles, the models achieve moderate performance metrics (F1: 0.618). As main challenges, we see the noise in the data and underlying processes as well as the extreme class imbalance between deforested (minority) and non-deforested (majority) pixels. We conclude that, at the current state of research, DL models can only partially help in forecasting deforestation.
+Deforestation is a major driver of climate change. To mitigate deforestation, carbon offset projects aim to protect forest areas at risk. However, existing literature shows that most projects have substantially overestimated the risk of deforestation, thereby issuing carbon credits without equivalent emissions reductions. In this study, we examine if the spread of deforestation can be predicted ex-ante using Deep Learning (DL) models. Our input data includes past deforestation development, slope information, land use, and other terrain- and soil-specific covariates. Testing predictions 1-year ahead, we find that our models only achieve low levels of predictability. For pixel-wise classification at a 30 m resolution, our models achieve an F1 score of 0.263. Only when substantially simplifying the task to predicting if any level of deforestation occurs within a 1.5 km squared tile, the model results improve to a moderate performance (F1: 0.608). We conclude that, based on our input data, slope information, and other common covariates, deforestation cannot be predicted accurately enough to justify the ex-ante issuance of carbon credits for forest conservation projects. As main challenges, there is the extreme class imbalance between pixels that are deforested (minority) and not deforested (majority) as well as the omittance of social, political, and economic drivers of deforestation.
 
 ## Installation
 ### Locally (for data preparation and model training)
@@ -16,7 +16,7 @@ Create a new conda environment and install the following packages:
 - pytorch-lightning -c conda-forge
 - tensorboard
 
-### Euler Cluster (only for model training)
+### Cluster (only for model training)
 Create a new conda environment and install the following packages:
 - python=3.8.5
 - pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
@@ -26,7 +26,7 @@ Create a new conda environment and install the following packages:
 
 ## Execution
 To train a model, request the processed dataset and place it in the data folder. 
-Adjust the ````config.json```` file to your wishes. Check out the config files used for our model training, to see the different options. Ensure that in ````train_model.py```` the config file is loaded correctly. Now, the model should start training. To train a model on Euler, you can use the ````submit.sh```` script, and specify the config file as an argument.
+Adjust the ````config.json```` file to your wishes. Check out the config files used for our model training, to see the different options. Ensure that in ````train_model.py```` the config file is loaded correctly. Now, the model should start training. To train a model on the Cluster, you can use the ````submit.sh```` script, and specify the config file as an argument.
 
 To make predictions with a trained model, use your own or request our models and place it in the models folder. Then, set the model name and properties in the file ````predict_model.py````. The predictions will be saved in the same folder as the model.
 
@@ -60,8 +60,15 @@ Most files are provided through this repository. Additionally, we are happy to s
 │       ├── utils               # Helpers: cnn, dataset, model
 │       ├── predict_model.py    # Run this file to make predictions with a trained model
 │       └── train_model.py      # Run this file to train a model
-└──  submit.sh                  # Shell script to submit training jobs to Euler
+└──  submit.sh                  # Shell script to submit training jobs to Cluster
 ```
 
+## Experiments Nomen Clature
+As this repository allows to run a wider variety of experiments, than described in the workshop paper, we want to clarify the naming of the experiments. The following table shows the naming of the experiments in the workshop paper and the corresponding ``config.json`` file in this repository.
+````
+Pixel-wise classification | 2D-CNN  ->  config_pixel_classification.json
+Pixel-wise classification | UNet    ->  config_tile_segmentation.json
+Tile-wise classification  | 2D-CNN  ->  config_tile_classification.json
+````
 
 
